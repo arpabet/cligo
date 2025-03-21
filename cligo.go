@@ -3,6 +3,7 @@ package cligo
 import (
 	"flag"
 	"fmt"
+	"go.arpabet.com/glue"
 	"os"
 	"reflect"
 	"strings"
@@ -15,9 +16,9 @@ type Context struct {
 
 // Command represents a parsed CLI command
 type Command struct {
-	Name    string
-	Help    string
-	Execute func(ctx Context) error
+	Name string
+	Help string
+	Run  func(ctx Context) error
 }
 
 // Group represents a command group
@@ -50,11 +51,10 @@ func NewRegistry() *Registry {
 }
 
 // Register registers a struct as either a group or command
-func (r *Registry) Register(item interface{}) {
+func (r *Registry) RegisterGroup(item interface{}) {
 	t := reflect.TypeOf(item).Elem()
-	v := reflect.ValueOf(item)
 
-	// Get CLI annotations
+	// Get CLI annotations from the first field (assuming it's the group field)
 	cliTag := t.Field(0).Tag.Get("cli")
 	if cliTag == "" {
 		return
@@ -63,7 +63,6 @@ func (r *Registry) Register(item interface{}) {
 	annotations := parseAnnotations(cliTag)
 
 	// Determine if it's a group or command
-	isGroup := strings.HasPrefix(annotations["group"], "group=")
 	parentGroup := strings.TrimPrefix(annotations["group"], "group=")
 
 	// Find or create parent group
@@ -72,7 +71,6 @@ func (r *Registry) Register(item interface{}) {
 		if g, ok := r.Root.Groups[parentGroup]; ok {
 			currentGroup = g
 		} else {
-			// Create new group if it doesn't exist
 			newGroup := &Group{
 				Name:     parentGroup,
 				Commands: make(map[string]Command),
@@ -83,86 +81,140 @@ func (r *Registry) Register(item interface{}) {
 		}
 	}
 
-	if isGroup {
-		// Register as a group
-		groupName := strings.TrimPrefix(annotations["group"], "group=")
-		newGroup := &Group{
-			Name:     groupName,
-			Commands: make(map[string]Command),
-			Groups:   make(map[string]*Group),
-		}
+	// Register as a group
+	groupName := strings.TrimPrefix(annotations["group"], "group=")
+	newGroup := &Group{
+		Name:     groupName,
+		Commands: make(map[string]Command),
+		Groups:   make(map[string]*Group),
+	}
 
-		// Get help text from Help() method
-		if helpMethod := v.MethodByName("Help"); helpMethod.IsValid() {
-			newGroup.Help = helpMethod.Call(nil)[0].String()
-		}
+	// Get help text from Help() method
+	if helpMethod := reflect.ValueOf(item).MethodByName("Help"); helpMethod.IsValid() {
+		newGroup.Help = helpMethod.Call(nil)[0].String()
+	}
 
-		currentGroup.Groups[groupName] = newGroup
-	} else {
-		// Register as a command
-		cmd := Command{
-			Execute: func(ctx Context) error {
-				return v.Interface().(Runner).Run(ctx)
-			},
-		}
+	currentGroup.Groups[groupName] = newGroup
 
-		// Get command name and help
-		if cmdMethod := v.MethodByName("Command"); cmdMethod.IsValid() {
-			cmd.Name = cmdMethod.Call(nil)[0].String()
-		}
-		if helpMethod := v.MethodByName("Help"); helpMethod.IsValid() {
-			cmd.Help = helpMethod.Call(nil)[0].String()
-		}
+}
 
-		// Parse arguments and options
-		for i := 1; i < t.NumField(); i++ {
-			field := t.Field(i)
-			cliTag := field.Tag.Get("cli")
-			if cliTag == "" {
-				continue
+func (r *Registry) RegisterCommand(item interface{}) {
+	t := reflect.TypeOf(item).Elem()
+	v := reflect.ValueOf(item).Elem() // Get the struct value
+
+	// Get CLI annotations from the first field (assuming it's the group field)
+	cliTag := t.Field(0).Tag.Get("cli")
+	if cliTag == "" {
+		return
+	}
+
+	annotations := parseAnnotations(cliTag)
+
+	// Determine if it's a group or command
+	parentGroup := strings.TrimPrefix(annotations["group"], "group=")
+
+	// Find or create parent group
+	currentGroup := r.Root
+	if parentGroup != "root" && parentGroup != "" {
+		if g, ok := r.Root.Groups[parentGroup]; ok {
+			currentGroup = g
+		} else {
+			newGroup := &Group{
+				Name:     parentGroup,
+				Commands: make(map[string]Command),
+				Groups:   make(map[string]*Group),
 			}
+			r.Root.Groups[parentGroup] = newGroup
+			currentGroup = newGroup
+		}
+	}
 
-			anns := parseAnnotations(cliTag)
-			switch {
-			case strings.HasPrefix(cliTag, "argument="):
-				// Arguments are handled via reflection when running
-			case strings.HasPrefix(cliTag, "option="):
-				// Register option with flag
-				name := strings.TrimPrefix(anns["option"], "option=")
-				defaultVal := anns["default"]
-				help := anns["help"]
+	// Register as a command
+	cmd := Command{
+		Run: func(ctx Context) error {
+			// Create a new instance and set arguments
+			newInstance := reflect.New(t).Interface().(Runner)
+			newValue := reflect.ValueOf(newInstance).Elem()
 
-				switch field.Type.Kind() {
-				case reflect.String:
-					flag.StringVar(v.Elem().Field(i).Addr().Interface().(*string), name, defaultVal, help)
-				case reflect.Bool:
-					boolVal := false
-					if defaultVal == "true" {
-						boolVal = true
+			// Set arguments from context
+			for i := 1; i < t.NumField(); i++ {
+				field := t.Field(i)
+				if tag := field.Tag.Get("cli"); strings.HasPrefix(tag, "argument=") {
+					if len(ctx.Args) > 0 {
+						switch field.Type.Kind() {
+						case reflect.String:
+							newValue.Field(i).SetString(ctx.Args[0])
+							ctx.Args = ctx.Args[1:]
+						case reflect.Float64:
+							var val float64
+							fmt.Sscanf(ctx.Args[0], "%f", &val)
+							newValue.Field(i).SetFloat(val)
+							ctx.Args = ctx.Args[1:]
+						}
 					}
-					flag.BoolVar(v.Elem().Field(i).Addr().Interface().(*bool), name, boolVal, help)
-				case reflect.Int:
-					intVal := 0
-					if defaultVal != "" {
-						fmt.Sscanf(defaultVal, "%d", &intVal)
-					}
-					flag.IntVar(v.Elem().Field(i).Addr().Interface().(*int), name, intVal, help)
-				case reflect.Float64:
-					floatVal := float64(0)
-					if defaultVal != "" {
-						fmt.Sscanf(defaultVal, "%f", &floatVal)
-					}
-					flag.Float64Var(v.Elem().Field(i).Addr().Interface().(*float64), name, floatVal, help)
 				}
 			}
+
+			return newInstance.Run(ctx)
+		},
+	}
+
+	// Get command name and help
+	if cmdMethod := reflect.ValueOf(item).MethodByName("Command"); cmdMethod.IsValid() {
+		cmd.Name = cmdMethod.Call(nil)[0].String()
+	}
+	if helpMethod := reflect.ValueOf(item).MethodByName("Help"); helpMethod.IsValid() {
+		cmd.Help = helpMethod.Call(nil)[0].String()
+	}
+
+	// Parse arguments and options
+	for i := 1; i < t.NumField(); i++ {
+		field := t.Field(i)
+		cliTag := field.Tag.Get("cli")
+		if cliTag == "" {
+			continue
 		}
 
-		currentGroup.Commands[cmd.Name] = cmd
+		anns := parseAnnotations(cliTag)
+		switch {
+		case strings.HasPrefix(cliTag, "argument="):
+			// Arguments will be set in Run
+		case strings.HasPrefix(cliTag, "option="):
+			name := strings.TrimPrefix(anns["option"], "option=")
+			defaultVal := anns["default"]
+			help := anns["help"]
+
+			switch field.Type.Kind() {
+			case reflect.String:
+				flag.StringVar(v.Field(i).Addr().Interface().(*string), name, defaultVal, help)
+			case reflect.Int:
+				intVal := 0
+				if defaultVal != "" {
+					fmt.Sscanf(defaultVal, "%d", &intVal)
+				}
+				flag.IntVar(v.Field(i).Addr().Interface().(*int), name, intVal, help)
+			case reflect.Float64:
+				floatVal := float64(0)
+				if defaultVal != "" {
+					fmt.Sscanf(defaultVal, "%f", &floatVal)
+				}
+				flag.Float64Var(v.Field(i).Addr().Interface().(*float64), name, floatVal, help)
+			case reflect.Bool:
+				boolVal := false
+				if defaultVal == "true" {
+					boolVal = true
+				}
+				flag.BoolVar(v.Field(i).Addr().Interface().(*bool), name, boolVal, help)
+			}
+		}
 	}
+
+	currentGroup.Commands[cmd.Name] = cmd
+
 }
 
 // Run parses arguments and executes the appropriate command
-func (r *Registry) Run() {
+func (r *Registry) Run(ctx glue.Context) {
 	flag.Parse()
 
 	args := flag.Args()
@@ -187,9 +239,9 @@ func (r *Registry) Run() {
 		}
 	}
 
-	if cmd.Execute != nil {
+	if cmd.Run != nil {
 		ctx := Context{Args: cmdArgs}
-		if err := cmd.Execute(ctx); err != nil {
+		if err := cmd.Run(ctx); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -232,13 +284,18 @@ func parseAnnotations(tag string) map[string]string {
 }
 
 // Main entry point
-func Main(items ...interface{}) {
+func Main(ctx glue.Context) {
 	registry := NewRegistry()
 
-	// Register all items
-	for _, item := range items {
-		registry.Register(item)
+	// Register all groups
+	for _, item := range ctx.Bean(CliGroupClass, 0) {
+		registry.RegisterGroup(item.Object())
 	}
 
-	registry.Run()
+	// Register all commands
+	for _, item := range ctx.Bean(CliCommandClass, 0) {
+		registry.RegisterCommand(item.Object())
+	}
+
+	registry.Run(ctx)
 }

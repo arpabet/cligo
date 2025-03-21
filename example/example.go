@@ -6,25 +6,9 @@ import (
 	"go.arpabet.com/glue"
 )
 
-type CliGroup interface {
-	// Group get group name
-	Group() string
-	// Help description about the group
-	Help() string
-}
-
-type CliCommand interface {
-	// Command get command name
-	Command() string
-	// Help description about the command
-	Help() string
-	// Run executes the command in context
-	Run(ctx glue.Context) error
-}
-
 type Cli struct {
-	group   CliGroup `cli:"group=root"`
-	version string   `cli:"app=version"`
+	GroupField cligo.CliGroup `cli:"group=root"`
+	Version    string         `cli:"app=version"`
 }
 
 func (g *Cli) Group() string {
@@ -41,7 +25,7 @@ func (g *Cli) Help() string {
 }
 
 type Ship struct {
-	group CliGroup `cli:"group=cli"`
+	GroupField cligo.CliGroup `cli:"group=cli"`
 }
 
 func (g *Ship) Group() string {
@@ -53,10 +37,8 @@ func (g *Ship) Help() string {
 }
 
 type ShipNew struct {
-	group   CliGroup `cli:"group=ship"`
-	name    string   `cli:"argument=name"`
-	count   int      `cli:"option=count,default=1,help=number of greetings"`
-	verbose bool     `cli:"option=verbose,default=false,help=Print verbose output."`
+	GroupField cligo.CliGroup `cli:"group=ship"`
+	Name       string         `cli:"argument=name"`
 }
 
 func (cmd *ShipNew) Command() string {
@@ -67,18 +49,18 @@ func (cmd *ShipNew) Help() string {
 	return `Creates a new ship.`
 }
 
-func (cmd *ShipNew) Run(ctx glue.Context) error {
-	fmt.Printf("Created ship %s", cmd.name)
+func (cmd *ShipNew) Run(ctx cligo.Context) error {
+	fmt.Printf("Created ship %s\n", cmd.Name)
 	return nil
 }
 
 type ShipMove struct {
-	group   CliGroup `cli:"group=ship"`
-	ship    string   `cli:"argument=ship"`
-	x       float64  `cli:"argument=x"`
-	y       float64  `cli:"argument=x"`
-	speed   int      `cli:"option=speed,default=10,help=Speed in knots."`
-	verbose bool     `cli:"option=verbose,default=false,help=Print verbose output."`
+	GroupField cligo.CliGroup `cli:"group=ship"`
+	Ship       string         `cli:"argument=ship"`
+	X          float64        `cli:"argument=x"`
+	Y          float64        `cli:"argument=y"`
+	Speed      int            `cli:"option=speed,default=10,help=Speed in knots."`
+	Verbose    bool           `cli:"option=verbose,default=false,help=Print verbose output."`
 }
 
 func (cmd *ShipMove) Command() string {
@@ -89,20 +71,26 @@ func (cmd *ShipMove) Help() string {
 	return `Moves SHIP to the new location X,Y.`
 }
 
-func (cmd *ShipMove) Run(ctx glue.Context) error {
-	if cmd.verbose {
-		fmt.Printf("Moving ship %s to %v,%v with speed %d (verbose mode)\n", cmd.ship, cmd.x, cmd.y, cmd.speed)
+func (cmd *ShipMove) Run(ctx cligo.Context) error {
+	if cmd.Verbose {
+		fmt.Printf("Moving ship %s to %v,%v with speed %d (verbose mode)\n", cmd.Ship, cmd.X, cmd.Y, cmd.Speed)
 	} else {
-		fmt.Printf("Moving ship %s to %v,%v with speed %d\n", cmd.ship, cmd.x, cmd.y, cmd.speed)
+		fmt.Printf("Moving ship %s to %v,%v with speed %d\n", cmd.Ship, cmd.X, cmd.Y, cmd.Speed)
 	}
 	return nil
 }
 
 func main() {
-	cligo.Main(
-		&Cli{},
+
+	context, err := glue.New(&Cli{},
 		&Ship{},
 		&ShipNew{},
-		&ShipMove{},
-	)
+		&ShipMove{})
+
+	if err != nil {
+		panic(err)
+	}
+	defer context.Close()
+
+	cligo.Main(context)
 }
