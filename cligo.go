@@ -231,9 +231,7 @@ func (app *App) executeCommand(ctx glue.Context, cmd CliCommand, args []string, 
 	}
 
 	argValues := flagSet.Args()
-
-	print("argValues", strings.Join(argValues, ","))
-
+	
 	if *isHelp {
 		app.printCommandHelp(cmd, stack)
 		return nil

@@ -7,7 +7,8 @@ import (
 )
 
 type ShipNew struct {
-	Name string `cli:"argument=name"`
+	Parent cligo.CliGroup `cli:"group=cli"`
+	Name   string         `cli:"argument=name"`
 }
 
 func (cmd *ShipNew) Command() string {
@@ -25,11 +26,12 @@ func (cmd *ShipNew) Run(ctx glue.Context) error {
 }
 
 type ShipMove struct {
-	Ship    string  `cli:"argument=ship"`
-	X       float64 `cli:"argument=x"`
-	Y       float64 `cli:"argument=y"`
-	Speed   int     `cli:"option=speed,default=10,help=Speed in knots."`
-	Verbose bool    `cli:"option=verbose,default=false,help=Print verbose output."`
+	Parent  cligo.CliGroup `cli:"group=cli"`
+	Ship    string         `cli:"argument=ship"`
+	X       float64        `cli:"argument=x"`
+	Y       float64        `cli:"argument=y"`
+	Speed   int            `cli:"option=speed,default=10,help=Speed in knots."`
+	Verbose bool           `cli:"option=verbose,default=false,help=Print verbose output."`
 }
 
 func (cmd *ShipMove) Command() string {
