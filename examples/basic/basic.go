@@ -65,6 +65,6 @@ func main() {
 		&ShipMove{},
 	}
 
-	cligo.Main(cligo.Name("basic"), cligo.Help(banner), cligo.Version("1.0.0"), cligo.Build("001"), cligo.Beans(beans))
+	cligo.Main(cligo.Name("basic"), cligo.Help(banner), cligo.Version("1.0.0"), cligo.Build("001"), cligo.Beans(beans...))
 
 }

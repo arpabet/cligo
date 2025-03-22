@@ -33,10 +33,10 @@ type CliApplication interface {
 	Help() string
 	Version() string
 	Build() string
-	Profile() string
 	Verbose() bool
 
-	SetProfile(profile string)
+	// Non-public method to keep beans private
+	getBeans() []interface{}
 
 	// RegisterGroup register the cli group in the context
 	RegisterGroup(group CliGroup) error

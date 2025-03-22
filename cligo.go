@@ -15,8 +15,8 @@ import (
 
 var RootGroup = "cli"
 
-// App is the main application structure
-type App struct {
+// implCliApplication is the main application structure
+type implCliApplication struct {
 	name     string
 	title    string
 	help     string
@@ -30,8 +30,8 @@ type App struct {
 }
 
 // New creates a new CLI application
-func New(options ...Option) *App {
-	app := &App{
+func New(options ...Option) CliApplication {
+	app := &implCliApplication{
 		groups:   make(map[string][]CliGroup),
 		commands: make(map[string][]CliCommand),
 		helps:    make(map[string]string),
@@ -67,28 +67,32 @@ func New(options ...Option) *App {
 	return app
 }
 
-func (app *App) Name() string {
+func (app *implCliApplication) Name() string {
 	return app.name
 }
 
-func (app *App) Title() string {
+func (app *implCliApplication) Title() string {
 	return app.title
 }
 
-func (app *App) Help() string {
+func (app *implCliApplication) Help() string {
 	return app.help
 }
 
-func (app *App) Version() string {
+func (app *implCliApplication) Version() string {
 	return app.version
 }
 
-func (app *App) Build() string {
+func (app *implCliApplication) Build() string {
 	return app.build
 }
 
-func (app *App) Verbose() bool {
+func (app *implCliApplication) Verbose() bool {
 	return app.verbose
+}
+
+func (app *implCliApplication) getBeans() []interface{} {
+	return app.beans
 }
 
 func hasVerbose(args []string) bool {
@@ -109,7 +113,7 @@ func Echo(format string, args ...interface{}) {
 }
 
 // RegisterGroup registers a command group
-func (app *App) RegisterGroup(group CliGroup) error {
+func (app *implCliApplication) RegisterGroup(group CliGroup) error {
 	parentGroup := extractParentGroup(group)
 	if parentGroup == "" {
 		return errors.Errorf("parent group not found in cli group: %v", group)
@@ -124,7 +128,7 @@ func (app *App) RegisterGroup(group CliGroup) error {
 }
 
 // RegisterCommand registers a command
-func (app *App) RegisterCommand(cmd CliCommand) error {
+func (app *implCliApplication) RegisterCommand(cmd CliCommand) error {
 	parentGroup := extractParentGroup(cmd)
 	if parentGroup == "" {
 		return errors.Errorf("parent group not found in cli command: %v", cmd)
@@ -134,7 +138,7 @@ func (app *App) RegisterCommand(cmd CliCommand) error {
 }
 
 // RunCLI parses arguments and runs the appropriate command
-func (app *App) RunCLI(ctx glue.Context) error {
+func (app *implCliApplication) RunCLI(ctx glue.Context) error {
 
 	if len(os.Args) < 2 {
 		app.printHelp(RootGroup, nil)
@@ -167,7 +171,7 @@ func (app *App) RunCLI(ctx glue.Context) error {
 }
 
 // parseAndExecute recursively parses arguments and executes the appropriate command
-func (app *App) parseAndExecute(ctx glue.Context, currentGroup string, args []string, stack []string) error {
+func (app *implCliApplication) parseAndExecute(ctx glue.Context, currentGroup string, args []string, stack []string) error {
 	if len(args) == 0 {
 		app.printHelp(currentGroup, stack)
 		return nil
@@ -214,7 +218,7 @@ func (app *App) parseAndExecute(ctx glue.Context, currentGroup string, args []st
 }
 
 // executeCommand parses arguments and options for a command and executes it
-func (app *App) executeCommand(ctx glue.Context, cmd CliCommand, args []string, stack []string) error {
+func (app *implCliApplication) executeCommand(ctx glue.Context, cmd CliCommand, args []string, stack []string) error {
 	// Create a new value to store the parsed arguments
 	cmdValue := reflect.ValueOf(cmd).Elem()
 	cmdType := cmdValue.Type()
@@ -364,7 +368,7 @@ func (app *App) executeCommand(ctx glue.Context, cmd CliCommand, args []string, 
 }
 
 // printHelp prints help for a group
-func (app *App) printHelp(groupName string, stack []string) {
+func (app *implCliApplication) printHelp(groupName string, stack []string) {
 
 	groups := app.groups[groupName]
 	commands := app.commands[groupName]
@@ -404,7 +408,7 @@ func (app *App) printHelp(groupName string, stack []string) {
 }
 
 // getCommandTryUsage gets printable help
-func (app *App) getCommandUsage(cmd CliCommand, stack []string) string {
+func (app *implCliApplication) getCommandUsage(cmd CliCommand, stack []string) string {
 
 	// Print arguments and options
 	cmdValue := reflect.ValueOf(cmd).Elem()
@@ -432,13 +436,13 @@ func (app *App) getCommandUsage(cmd CliCommand, stack []string) string {
 }
 
 // getCommandTryUsage gets printable help with try statement
-func (app *App) getCommandTryUsage(cmd CliCommand, stack []string) string {
+func (app *implCliApplication) getCommandTryUsage(cmd CliCommand, stack []string) string {
 	path := strings.Join(stack, " ")
 	return fmt.Sprintf("Try '%s %s --help' for help", cmd.Command(), path)
 }
 
 // printCommandHelp prints help for a specific command
-func (app *App) printCommandHelp(cmd CliCommand, stack []string) {
+func (app *implCliApplication) printCommandHelp(cmd CliCommand, stack []string) {
 
 	// Print arguments and options
 	cmdValue := reflect.ValueOf(cmd).Elem()
@@ -571,8 +575,8 @@ func Run(options ...Option) (err error) {
 	if hasVerbose(os.Args[1:]) {
 		glue.Verbose(log.Default())
 	}
-
-	ctx, err := glue.New(app.beans...)
+	
+	ctx, err := glue.New(app.getBeans()...)
 	if err != nil {
 		return errors.Errorf("glue.New: %v", err)
 	}
