@@ -17,24 +17,26 @@ var RootGroup = "cli"
 
 // implCliApplication is the main application structure
 type implCliApplication struct {
-	name     string
-	title    string
-	help     string
-	version  string
-	build    string
-	verbose  bool
-	beans    []interface{}
-	groups   map[string][]CliGroup
-	commands map[string][]CliCommand
-	helps    map[string]string
+	name         string
+	title        string
+	help         string
+	version      string
+	build        string
+	verbose      bool
+	beans        []interface{}
+	groups       map[string][]CliGroup
+	commands     map[string][]CliCommand
+	commandBeans map[string][]interface{}
+	helps        map[string]string
 }
 
 // New creates a new CLI application
 func New(options ...Option) CliApplication {
 	app := &implCliApplication{
-		groups:   make(map[string][]CliGroup),
-		commands: make(map[string][]CliCommand),
-		helps:    make(map[string]string),
+		groups:       make(map[string][]CliGroup),
+		commands:     make(map[string][]CliCommand),
+		commandBeans: make(map[string][]interface{}),
+		helps:        make(map[string]string),
 	}
 
 	// first bean is application itself
@@ -134,11 +136,15 @@ func (app *implCliApplication) RegisterCommand(cmd CliCommand) error {
 		return errors.Errorf("parent group not found in cli command: %v", cmd)
 	}
 	app.commands[parentGroup] = append(app.commands[parentGroup], cmd)
+
+	if provider, ok := cmd.(CliCommandBeans); ok {
+		app.commandBeans[parentGroup] = append(app.commandBeans[parentGroup], provider.CommandBeans()...)
+	}
 	return nil
 }
 
-// RunCLI parses arguments and runs the appropriate command
-func (app *implCliApplication) RunCLI(ctx glue.Context) error {
+// Execute parses arguments and runs the appropriate command
+func (app *implCliApplication) Execute(ctx glue.Context) error {
 
 	if len(os.Args) < 2 {
 		app.printHelp(RootGroup, nil)
@@ -363,7 +369,18 @@ func (app *implCliApplication) executeCommand(ctx glue.Context, cmd CliCommand, 
 		}
 	})
 
-	// Execute the command
+	cmdBeans, ok := app.commandBeans[cmd.Command()]
+	if ok && len(cmdBeans) > 0 {
+		child, err := ctx.Extend(cmdBeans...)
+		if err != nil {
+			Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
+			return fmt.Errorf("fail to initialize '%s' command scope context, %v", cmd.Command(), err)
+		}
+		defer child.Close()
+		return cmd.Run(child)
+	}
+
+	// Execute the command in app context
 	return cmd.Run(ctx)
 }
 
@@ -575,7 +592,7 @@ func Run(options ...Option) (err error) {
 	if hasVerbose(os.Args[1:]) {
 		glue.Verbose(log.Default())
 	}
-	
+
 	ctx, err := glue.New(app.getBeans()...)
 	if err != nil {
 		return errors.Errorf("glue.New: %v", err)
@@ -598,7 +615,7 @@ func Run(options ...Option) (err error) {
 		}
 	}
 
-	return app.RunCLI(ctx)
+	return app.Execute(ctx)
 }
 
 func Main(options ...Option) {
