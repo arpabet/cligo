@@ -18,9 +18,11 @@ var RootGroup = "cli"
 // App is the main application structure
 type App struct {
 	name     string
+	title    string
 	help     string
 	version  string
 	build    string
+	verbose  bool
 	beans    []interface{}
 	groups   map[string][]CliGroup
 	commands map[string][]CliCommand
@@ -47,11 +49,55 @@ func New(options ...Option) *App {
 		app.name = filepath.Base(os.Args[0])
 	}
 
+	var str strings.Builder
+	if app.title != "" {
+		str.WriteString(app.title)
+		str.WriteString("\n")
+	}
 	if app.help != "" {
-		app.helps[RootGroup] = app.help
+		str.WriteString(app.help)
+		str.WriteString("\n")
+	}
+	app.helps[RootGroup] = str.String()
+
+	if !app.verbose {
+		app.verbose = hasVerbose(os.Args[1:])
 	}
 
 	return app
+}
+
+func (app *App) Name() string {
+	return app.name
+}
+
+func (app *App) Title() string {
+	return app.title
+}
+
+func (app *App) Help() string {
+	return app.help
+}
+
+func (app *App) Version() string {
+	return app.version
+}
+
+func (app *App) Build() string {
+	return app.build
+}
+
+func (app *App) Verbose() bool {
+	return app.verbose
+}
+
+func hasVerbose(args []string) bool {
+	for _, arg := range args {
+		if arg == "--verbose" || arg == "-v" {
+			return true
+		}
+	}
+	return false
 }
 
 func Echo(format string, args ...interface{}) {
@@ -97,6 +143,9 @@ func (app *App) RunCLI(ctx glue.Context) error {
 
 	// Check for version flag
 	if os.Args[1] == "--version" || os.Args[1] == "-v" {
+		if app.title != "" {
+			Echo(app.title)
+		}
 		Echo("Application: %s", app.name)
 		if app.version != "" {
 			Echo("Version: %s", app.version)
@@ -148,7 +197,18 @@ func (app *App) parseAndExecute(ctx glue.Context, currentGroup string, args []st
 		}
 	}
 
-	fmt.Printf("Unknown command or group: %s\n", args[0])
+	// Check if the first argument is a know option
+	if args[0] == "--help" || args[0] == "-h" {
+		app.printHelp(RootGroup, stack)
+		return nil
+	}
+
+	if args[0] == "--verbose" || args[0] == "-v" {
+		app.verbose = true
+		app.printHelp(currentGroup, stack)
+		return nil
+	}
+
 	app.printHelp(currentGroup, stack)
 	return fmt.Errorf("unknown command or group: %s", args[0])
 }
@@ -223,6 +283,7 @@ func (app *App) executeCommand(ctx glue.Context, cmd CliCommand, args []string, 
 
 	// Add help option
 	isHelp := flagSet.Bool("help", false, "Print help")
+	isVerbose := flagSet.Bool("verbose", false, "Verbose output")
 
 	// Parse flags
 	err := flagSet.Parse(args)
@@ -231,11 +292,14 @@ func (app *App) executeCommand(ctx glue.Context, cmd CliCommand, args []string, 
 	}
 
 	argValues := flagSet.Args()
-	
+
 	if *isHelp {
 		app.printCommandHelp(cmd, stack)
 		return nil
 	}
+
+	// update verbose flag based on options
+	app.verbose = *isVerbose
 
 	// Handle positional arguments
 	//if len(argValues) < len(arguments) {
@@ -321,6 +385,7 @@ func (app *App) printHelp(groupName string, stack []string) {
 	if groupName == RootGroup {
 		Echo("Options:")
 		Echo("  --version  Show the version and exit.")
+		Echo("  --verbose  Show extended logging information.")
 		Echo("  --help     Show this message and exit.")
 		Echo("")
 	}
@@ -530,15 +595,6 @@ func Run(options ...Option) (err error) {
 	}
 
 	return app.RunCLI(ctx)
-}
-
-func hasVerbose(args []string) bool {
-	for _, arg := range args {
-		if arg == "--verbose" || arg == "-v" {
-			return true
-		}
-	}
-	return false
 }
 
 func Main(options ...Option) {

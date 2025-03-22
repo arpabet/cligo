@@ -30,6 +30,13 @@ func Name(name string) Option {
 }
 
 // option that adds app help
+func Title(title string) Option {
+	return optionFunc(func(a *App) {
+		a.title = title
+	})
+}
+
+// option that adds app help
 func Help(help string) Option {
 	return optionFunc(func(a *App) {
 		a.help = help
@@ -47,6 +54,13 @@ func Version(version string) Option {
 func Build(build string) Option {
 	return optionFunc(func(a *App) {
 		a.build = build
+	})
+}
+
+// option that adds verbose
+func Verbose(verbose bool) Option {
+	return optionFunc(func(a *App) {
+		a.verbose = verbose
 	})
 }
 

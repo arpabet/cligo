@@ -24,3 +24,26 @@ type CliCommand interface {
 	// Run executes the command in context
 	Run(ctx glue.Context) error
 }
+
+var CliApplicationClass = reflect.TypeOf((*CliApplication)(nil)).Elem()
+
+type CliApplication interface {
+	Name() string
+	Title() string
+	Help() string
+	Version() string
+	Build() string
+	Profile() string
+	Verbose() bool
+
+	SetProfile(profile string)
+
+	// RegisterGroup register the cli group in the context
+	RegisterGroup(group CliGroup) error
+
+	// RegisterCommand register the cli command in the context
+	RegisterCommand(cmd CliCommand) error
+
+	// Run CLI
+	RunCLI(ctx glue.Context) error
+}
