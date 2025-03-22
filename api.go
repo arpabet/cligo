@@ -25,9 +25,10 @@ type CliCommand interface {
 	Run(ctx glue.Context) error
 }
 
-var CliCommandBeansClass = reflect.TypeOf((*CliCommandBeans)(nil)).Elem()
+var CliCommandWithBeansClass = reflect.TypeOf((*CliCommandWithBeans)(nil)).Elem()
 
-type CliCommandBeans interface {
+type CliCommandWithBeans interface {
+	CliCommand
 	// CommandBeans get optional beans for the command scope
 	CommandBeans() []interface{}
 }
@@ -50,6 +51,9 @@ type CliApplication interface {
 
 	// RegisterCommand register the cli command in the context
 	RegisterCommand(cmd CliCommand) error
+
+	// RegisterCommandWithBeans register the cli command with beans in the context
+	RegisterCommandWithBeans(cmd CliCommandWithBeans) error
 
 	// Run CLI
 	Execute(ctx glue.Context) error

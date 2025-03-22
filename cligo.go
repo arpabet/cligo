@@ -136,9 +136,20 @@ func (app *implCliApplication) RegisterCommand(cmd CliCommand) error {
 		return errors.Errorf("parent group not found in cli command: %v", cmd)
 	}
 	app.commands[parentGroup] = append(app.commands[parentGroup], cmd)
+	return nil
+}
 
-	if provider, ok := cmd.(CliCommandBeans); ok {
-		app.commandBeans[parentGroup] = append(app.commandBeans[parentGroup], provider.CommandBeans()...)
+// RegisterCommandWithBeans registers a command with beans
+func (app *implCliApplication) RegisterCommandWithBeans(cmd CliCommandWithBeans) error {
+	parentGroup := extractParentGroup(cmd)
+	if parentGroup == "" {
+		return errors.Errorf("parent group not found in cli command: %v", cmd)
+	}
+	app.commands[parentGroup] = append(app.commands[parentGroup], cmd)
+
+	commandBeans := cmd.CommandBeans()
+	if len(commandBeans) > 0 {
+		app.commandBeans[cmd.Command()] = append(app.commandBeans[cmd.Command()], commandBeans...)
 	}
 	return nil
 }
@@ -449,13 +460,13 @@ func (app *implCliApplication) getCommandUsage(cmd CliCommand, stack []string) s
 	path := strings.Join(stack, " ")
 	argsLine := strings.Join(arguments, " ")
 
-	return fmt.Sprintf("Usage: %s %s [OPTIONS] %s", cmd.Command(), path, argsLine)
+	return fmt.Sprintf("Usage: %s %s [OPTIONS] %s", app.name, path, argsLine)
 }
 
 // getCommandTryUsage gets printable help with try statement
 func (app *implCliApplication) getCommandTryUsage(cmd CliCommand, stack []string) string {
 	path := strings.Join(stack, " ")
-	return fmt.Sprintf("Try '%s %s --help' for help", cmd.Command(), path)
+	return fmt.Sprintf("Try '%s %s --help' for help", app.name, path)
 }
 
 // printCommandHelp prints help for a specific command
@@ -571,7 +582,7 @@ func extractParentGroup(obj interface{}) string {
 	return ""
 }
 
-// Main entry point
+// Run entry point
 func Run(options ...Option) (err error) {
 
 	defer func() {
@@ -599,9 +610,31 @@ func Run(options ...Option) (err error) {
 	}
 	defer ctx.Close()
 
+	visited := make(map[uintptr]bool)
+
 	// Register all groups
 	for _, item := range ctx.Bean(CliGroupClass, 0) {
-		err = app.RegisterGroup(item.Object().(CliGroup))
+		obj := item.Object()
+		addr := reflect.ValueOf(obj).Pointer()
+		if visited[addr] {
+			continue
+		}
+		visited[addr] = true
+		err = app.RegisterGroup(obj.(CliGroup))
+		if err != nil {
+			return err
+		}
+	}
+
+	// Register all commands with beans
+	for _, item := range ctx.Bean(CliCommandWithBeansClass, 0) {
+		obj := item.Object()
+		addr := reflect.ValueOf(obj).Pointer()
+		if visited[addr] {
+			continue
+		}
+		visited[addr] = true
+		err = app.RegisterCommandWithBeans(obj.(CliCommandWithBeans))
 		if err != nil {
 			return err
 		}
@@ -609,7 +642,13 @@ func Run(options ...Option) (err error) {
 
 	// Register all commands
 	for _, item := range ctx.Bean(CliCommandClass, 0) {
-		err = app.RegisterCommand(item.Object().(CliCommand))
+		obj := item.Object()
+		addr := reflect.ValueOf(obj).Pointer()
+		if visited[addr] {
+			continue
+		}
+		visited[addr] = true
+		err = app.RegisterCommand(obj.(CliCommand))
 		if err != nil {
 			return err
 		}
