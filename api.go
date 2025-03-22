@@ -1,6 +1,9 @@
 package cligo
 
-import "reflect"
+import (
+	"go.arpabet.com/glue"
+	"reflect"
+)
 
 var CliGroupClass = reflect.TypeOf((*CliGroup)(nil)).Elem()
 
@@ -8,7 +11,7 @@ type CliGroup interface {
 	// Group get group name
 	Group() string
 	// Help description about the group
-	Help() string
+	Help() (short string, optionalLong string)
 }
 
 var CliCommandClass = reflect.TypeOf((*CliCommand)(nil)).Elem()
@@ -17,7 +20,7 @@ type CliCommand interface {
 	// Command get command name
 	Command() string
 	// Help description about the command
-	Help() string
+	Help() (short string, optionalLong string)
 	// Run executes the command in context
-	Run(ctx Context) error
+	Run(ctx glue.Context) error
 }

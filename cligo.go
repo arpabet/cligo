@@ -1,301 +1,552 @@
 package cligo
 
 import (
-	"flag"
 	"fmt"
+	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
 	"go.arpabet.com/glue"
+	"log"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
-// Context holds the execution context for commands
-type Context struct {
-	Args []string
+var RootGroup = "cli"
+
+// App is the main application structure
+type App struct {
+	name     string
+	help     string
+	version  string
+	build    string
+	beans    []interface{}
+	groups   map[string][]CliGroup
+	commands map[string][]CliCommand
+	helps    map[string]string
 }
 
-// Command represents a parsed CLI command
-type Command struct {
-	Name string
-	Help string
-	Run  func(ctx Context) error
-}
-
-// Group represents a command group
-type Group struct {
-	Name     string
-	Help     string
-	Commands map[string]Command
-	Groups   map[string]*Group
-}
-
-// Runner interface for executable commands
-type Runner interface {
-	Run(ctx Context) error
-}
-
-// Registry to hold all registered groups and commands
-type Registry struct {
-	Root *Group
-}
-
-// NewRegistry creates a new command registry
-func NewRegistry() *Registry {
-	return &Registry{
-		Root: &Group{
-			Name:     "root",
-			Commands: make(map[string]Command),
-			Groups:   make(map[string]*Group),
-		},
+// New creates a new CLI application
+func New(options ...Option) *App {
+	app := &App{
+		groups:   make(map[string][]CliGroup),
+		commands: make(map[string][]CliCommand),
+		helps:    make(map[string]string),
 	}
+
+	// first bean is application itself
+	app.beans = []interface{}{app}
+
+	// apply options
+	for _, opt := range options {
+		opt.apply(app)
+	}
+
+	if app.name == "" {
+		app.name = filepath.Base(os.Args[0])
+	}
+
+	if app.help != "" {
+		app.helps[RootGroup] = app.help
+	}
+
+	return app
 }
 
-// Register registers a struct as either a group or command
-func (r *Registry) RegisterGroup(item interface{}) {
-	t := reflect.TypeOf(item).Elem()
-
-	// Get CLI annotations from the first field (assuming it's the group field)
-	cliTag := t.Field(0).Tag.Get("cli")
-	if cliTag == "" {
+func Echo(format string, args ...interface{}) {
+	if len(format) == 0 {
+		println()
 		return
 	}
+	fmt.Printf(format+"\n", args...)
+}
 
-	annotations := parseAnnotations(cliTag)
+// RegisterGroup registers a command group
+func (app *App) RegisterGroup(group CliGroup) error {
+	parentGroup := extractParentGroup(group)
+	if parentGroup == "" {
+		return errors.Errorf("parent group not found in cli group: %v", group)
+	}
+	app.groups[parentGroup] = append(app.groups[parentGroup], group)
+	shortDesc, longDesc := group.Help()
+	if len(longDesc) == 0 {
+		longDesc = shortDesc
+	}
+	app.helps[group.Group()] = longDesc
+	return nil
+}
 
-	// Determine if it's a group or command
-	parentGroup := strings.TrimPrefix(annotations["group"], "group=")
+// RegisterCommand registers a command
+func (app *App) RegisterCommand(cmd CliCommand) error {
+	parentGroup := extractParentGroup(cmd)
+	if parentGroup == "" {
+		return errors.Errorf("parent group not found in cli command: %v", cmd)
+	}
+	app.commands[parentGroup] = append(app.commands[parentGroup], cmd)
+	return nil
+}
 
-	// Find or create parent group
-	currentGroup := r.Root
-	if parentGroup != "root" && parentGroup != "" {
-		if g, ok := r.Root.Groups[parentGroup]; ok {
-			currentGroup = g
-		} else {
-			newGroup := &Group{
-				Name:     parentGroup,
-				Commands: make(map[string]Command),
-				Groups:   make(map[string]*Group),
+// RunCLI parses arguments and runs the appropriate command
+func (app *App) RunCLI(ctx glue.Context) error {
+
+	if len(os.Args) < 2 {
+		app.printHelp(RootGroup, nil)
+		return nil
+	}
+
+	// Check for version flag
+	if os.Args[1] == "--version" || os.Args[1] == "-v" {
+		Echo("Application: %s", app.name)
+		if app.version != "" {
+			Echo("Version: %s", app.version)
+		}
+		if app.build != "" {
+			Echo("Build: %s", app.build)
+		}
+		return nil
+	}
+
+	// Check for help flag
+	if os.Args[1] == "--help" || os.Args[1] == "-h" {
+		app.printHelp(RootGroup, nil)
+		return nil
+	}
+
+	var stack []string
+	return app.parseAndExecute(ctx, RootGroup, os.Args[1:], stack)
+}
+
+// parseAndExecute recursively parses arguments and executes the appropriate command
+func (app *App) parseAndExecute(ctx glue.Context, currentGroup string, args []string, stack []string) error {
+	if len(args) == 0 {
+		app.printHelp(currentGroup, stack)
+		return nil
+	}
+
+	// Check if the first argument is a group
+	for _, group := range app.groups[currentGroup] {
+		if group.Group() == args[0] {
+			if len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
+				app.printHelp(group.Group(), stack)
+				return nil
 			}
-			r.Root.Groups[parentGroup] = newGroup
-			currentGroup = newGroup
+			stack = append(stack, args[0])
+			return app.parseAndExecute(ctx, group.Group(), args[1:], stack)
 		}
 	}
 
-	// Register as a group
-	groupName := strings.TrimPrefix(annotations["group"], "group=")
-	newGroup := &Group{
-		Name:     groupName,
-		Commands: make(map[string]Command),
-		Groups:   make(map[string]*Group),
-	}
-
-	// Get help text from Help() method
-	if helpMethod := reflect.ValueOf(item).MethodByName("Help"); helpMethod.IsValid() {
-		newGroup.Help = helpMethod.Call(nil)[0].String()
-	}
-
-	currentGroup.Groups[groupName] = newGroup
-
-}
-
-func (r *Registry) RegisterCommand(item interface{}) {
-	t := reflect.TypeOf(item).Elem()
-	v := reflect.ValueOf(item).Elem() // Get the struct value
-
-	// Get CLI annotations from the first field (assuming it's the group field)
-	cliTag := t.Field(0).Tag.Get("cli")
-	if cliTag == "" {
-		return
-	}
-
-	annotations := parseAnnotations(cliTag)
-
-	// Determine if it's a group or command
-	parentGroup := strings.TrimPrefix(annotations["group"], "group=")
-
-	// Find or create parent group
-	currentGroup := r.Root
-	if parentGroup != "root" && parentGroup != "" {
-		if g, ok := r.Root.Groups[parentGroup]; ok {
-			currentGroup = g
-		} else {
-			newGroup := &Group{
-				Name:     parentGroup,
-				Commands: make(map[string]Command),
-				Groups:   make(map[string]*Group),
+	// Check if the first argument is a command
+	for _, cmd := range app.commands[currentGroup] {
+		if cmd.Command() == args[0] {
+			if len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
+				app.printCommandHelp(cmd, stack)
+				return nil
 			}
-			r.Root.Groups[parentGroup] = newGroup
-			currentGroup = newGroup
+			stack = append(stack, args[0])
+			return app.executeCommand(ctx, cmd, args[1:], stack)
 		}
 	}
 
-	// Register as a command
-	cmd := Command{
-		Run: func(ctx Context) error {
-			// Create a new instance and set arguments
-			newInstance := reflect.New(t).Interface().(Runner)
-			newValue := reflect.ValueOf(newInstance).Elem()
+	fmt.Printf("Unknown command or group: %s\n", args[0])
+	app.printHelp(currentGroup, stack)
+	return fmt.Errorf("unknown command or group: %s", args[0])
+}
 
-			// Set arguments from context
-			for i := 1; i < t.NumField(); i++ {
-				field := t.Field(i)
-				if tag := field.Tag.Get("cli"); strings.HasPrefix(tag, "argument=") {
-					if len(ctx.Args) > 0 {
-						switch field.Type.Kind() {
-						case reflect.String:
-							newValue.Field(i).SetString(ctx.Args[0])
-							ctx.Args = ctx.Args[1:]
-						case reflect.Float64:
-							var val float64
-							fmt.Sscanf(ctx.Args[0], "%f", &val)
-							newValue.Field(i).SetFloat(val)
-							ctx.Args = ctx.Args[1:]
-						}
-					}
-				}
-			}
+// executeCommand parses arguments and options for a command and executes it
+func (app *App) executeCommand(ctx glue.Context, cmd CliCommand, args []string, stack []string) error {
+	// Create a new value to store the parsed arguments
+	cmdValue := reflect.ValueOf(cmd).Elem()
+	cmdType := cmdValue.Type()
 
-			return newInstance.Run(ctx)
-		},
-	}
+	// Prepare a custom flag set
+	flagSet := pflag.NewFlagSet(cmd.Command(), pflag.ContinueOnError)
+	flagSet.Usage = func() { app.printCommandHelp(cmd, stack) }
 
-	// Get command name and help
-	if cmdMethod := reflect.ValueOf(item).MethodByName("Command"); cmdMethod.IsValid() {
-		cmd.Name = cmdMethod.Call(nil)[0].String()
-	}
-	if helpMethod := reflect.ValueOf(item).MethodByName("Help"); helpMethod.IsValid() {
-		cmd.Help = helpMethod.Call(nil)[0].String()
-	}
+	// Track arguments and their positions
+	var arguments []string
+	var positions []int
+	options := make(map[string]reflect.Value)
 
-	// Parse arguments and options
-	for i := 1; i < t.NumField(); i++ {
-		field := t.Field(i)
+	// First pass: identify arguments and register options
+	for i := 0; i < cmdType.NumField(); i++ {
+		field := cmdType.Field(i)
 		cliTag := field.Tag.Get("cli")
 		if cliTag == "" {
 			continue
 		}
 
-		anns := parseAnnotations(cliTag)
-		switch {
-		case strings.HasPrefix(cliTag, "argument="):
-			// Arguments will be set in Run
-		case strings.HasPrefix(cliTag, "option="):
-			name := strings.TrimPrefix(anns["option"], "option=")
-			defaultVal := anns["default"]
-			help := anns["help"]
+		tagParts := parseCliTag(cliTag)
 
-			switch field.Type.Kind() {
+		// Handle argument
+		if argName, ok := tagParts["argument"]; ok {
+			arguments = append(arguments, argName)
+			positions = append(positions, i)
+			continue
+		}
+
+		// Handle option
+		if optName, ok := tagParts["option"]; ok {
+			fieldVal := cmdValue.Field(i)
+			options[optName] = fieldVal
+
+			// Register flag with the flag set based on field type
+			switch fieldVal.Kind() {
 			case reflect.String:
-				flag.StringVar(v.Field(i).Addr().Interface().(*string), name, defaultVal, help)
-			case reflect.Int:
-				intVal := 0
-				if defaultVal != "" {
-					fmt.Sscanf(defaultVal, "%d", &intVal)
+				defaultVal := tagParts["default"]
+				helpText := tagParts["help"]
+				flagSet.String(optName, defaultVal, helpText)
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				defaultVal := 0
+				if val, ok := tagParts["default"]; ok {
+					defaultVal, _ = strconv.Atoi(val)
 				}
-				flag.IntVar(v.Field(i).Addr().Interface().(*int), name, intVal, help)
-			case reflect.Float64:
-				floatVal := float64(0)
-				if defaultVal != "" {
-					fmt.Sscanf(defaultVal, "%f", &floatVal)
+				helpText := tagParts["help"]
+				flagSet.Int(optName, defaultVal, helpText)
+			case reflect.Float32, reflect.Float64:
+				defaultVal := 0.0
+				if val, ok := tagParts["default"]; ok {
+					defaultVal, _ = strconv.ParseFloat(val, 64)
 				}
-				flag.Float64Var(v.Field(i).Addr().Interface().(*float64), name, floatVal, help)
+				helpText := tagParts["help"]
+				flagSet.Float64(optName, defaultVal, helpText)
 			case reflect.Bool:
-				boolVal := false
-				if defaultVal == "true" {
-					boolVal = true
+				defaultVal := false
+				if val, ok := tagParts["default"]; ok {
+					defaultVal = val == "true"
 				}
-				flag.BoolVar(v.Field(i).Addr().Interface().(*bool), name, boolVal, help)
+				helpText := tagParts["help"]
+				flagSet.Bool(optName, defaultVal, helpText)
 			}
 		}
 	}
 
-	currentGroup.Commands[cmd.Name] = cmd
+	// Add help option
+	isHelp := flagSet.Bool("help", false, "Print help")
+
+	// Parse flags
+	err := flagSet.Parse(args)
+	if err != nil {
+		return err
+	}
+
+	argValues := flagSet.Args()
+
+	print("argValues", strings.Join(argValues, ","))
+
+	if *isHelp {
+		app.printCommandHelp(cmd, stack)
+		return nil
+	}
+
+	// Handle positional arguments
+	//if len(argValues) < len(arguments) {
+	//	Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
+	//	return fmt.Errorf("not enough arguments provided, expected %d, got %d", len(arguments), len(argValues))
+	//}
+
+	// Set argument values
+	argIndex := 0
+	for i, argName := range arguments {
+		fieldIndex := positions[i]
+		field := cmdValue.Field(fieldIndex)
+		if argIndex >= len(argValues) {
+			Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
+			return fmt.Errorf("missing argument '%s' on position %d", argName, fieldIndex)
+		}
+
+		// Set the field value based on its type
+		switch field.Kind() {
+		case reflect.String:
+			field.SetString(argValues[argIndex])
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			val, err := strconv.ParseInt(argValues[argIndex], 10, 64)
+			if err != nil {
+				Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
+				return fmt.Errorf("invalid integer for argument %s: %s", argName, argValues[argIndex])
+			}
+			field.SetInt(val)
+		case reflect.Float32, reflect.Float64:
+			val, err := strconv.ParseFloat(argValues[argIndex], 64)
+			if err != nil {
+				Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
+				return fmt.Errorf("invalid float for argument %s: %s", argName, argValues[argIndex])
+			}
+			field.SetFloat(val)
+		}
+		argIndex++
+	}
+
+	// Set option values
+	flagSet.Visit(func(f *pflag.Flag) {
+		if field, ok := options[f.Name]; ok {
+			// Set the field value based on its type
+			switch field.Kind() {
+			case reflect.String:
+				field.SetString(f.Value.String())
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				val, _ := strconv.ParseInt(f.Value.String(), 10, 64)
+				field.SetInt(val)
+			case reflect.Float32, reflect.Float64:
+				val, _ := strconv.ParseFloat(f.Value.String(), 64)
+				field.SetFloat(val)
+			case reflect.Bool:
+				val, _ := strconv.ParseBool(f.Value.String())
+				field.SetBool(val)
+			}
+		}
+	})
+
+	// Execute the command
+	return cmd.Run(ctx)
+}
+
+// printHelp prints help for a group
+func (app *App) printHelp(groupName string, stack []string) {
+
+	groups := app.groups[groupName]
+	commands := app.commands[groupName]
+
+	path := strings.Join(stack, " ")
+
+	if len(groups)+len(commands) > 0 {
+		Echo("Usage: %s %s [OPTIONS] COMMAND [ARGS]...", app.name, path)
+	} else {
+		Echo("Usage: %s %s [OPTIONS] [ARGS]...", app.name, path)
+	}
+
+	help := app.helps[groupName]
+	if help != "" {
+		Echo("\n%s\n", help)
+	}
+
+	if groupName == RootGroup {
+		Echo("Options:")
+		Echo("  --version  Show the version and exit.")
+		Echo("  --help     Show this message and exit.")
+		Echo("")
+	}
+
+	Echo("Commands:")
+	for _, grp := range groups {
+		shortDesc, _ := grp.Help()
+		Echo("  %s\t%s", grp.Group(), shortDesc)
+	}
+
+	for _, cmd := range commands {
+		shortDesc, _ := cmd.Help()
+		Echo("  %s\t%s", cmd.Command(), shortDesc)
+	}
 
 }
 
-// Run parses arguments and executes the appropriate command
-func (r *Registry) Run(ctx glue.Context) {
-	flag.Parse()
+// getCommandTryUsage gets printable help
+func (app *App) getCommandUsage(cmd CliCommand, stack []string) string {
 
-	args := flag.Args()
-	if len(args) == 0 {
-		r.printHelp(r.Root)
-		return
-	}
+	// Print arguments and options
+	cmdValue := reflect.ValueOf(cmd).Elem()
+	cmdType := cmdValue.Type()
 
-	current := r.Root
-	var cmd Command
-	var cmdArgs []string
-
-	for i, arg := range args {
-		if g, ok := current.Groups[arg]; ok {
-			current = g
+	// First get arguments
+	var arguments []string
+	for i := 0; i < cmdType.NumField(); i++ {
+		field := cmdType.Field(i)
+		cliTag := field.Tag.Get("cli")
+		if cliTag == "" {
 			continue
 		}
-		if c, ok := current.Commands[arg]; ok {
-			cmd = c
-			cmdArgs = args[i+1:]
-			break
+
+		tagParts := parseCliTag(cliTag)
+		if argName, ok := tagParts["argument"]; ok {
+			arguments = append(arguments, strings.ToUpper(argName))
 		}
 	}
 
-	if cmd.Run != nil {
-		ctx := Context{Args: cmdArgs}
-		if err := cmd.Run(ctx); err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
+	path := strings.Join(stack, " ")
+	argsLine := strings.Join(arguments, " ")
 
-	r.printHelp(current)
+	return fmt.Sprintf("Usage: %s %s [OPTIONS] %s", cmd.Command(), path, argsLine)
 }
 
-// printHelp displays help information
-func (r *Registry) printHelp(g *Group) {
-	fmt.Printf("%s\n\n", g.Help)
-	if len(g.Groups) > 0 {
-		fmt.Println("Groups:")
-		for name, group := range g.Groups {
-			fmt.Printf("  %s: %s\n", name, group.Help)
-		}
+// getCommandTryUsage gets printable help with try statement
+func (app *App) getCommandTryUsage(cmd CliCommand, stack []string) string {
+	path := strings.Join(stack, " ")
+	return fmt.Sprintf("Try '%s %s --help' for help", cmd.Command(), path)
+}
+
+// printCommandHelp prints help for a specific command
+func (app *App) printCommandHelp(cmd CliCommand, stack []string) {
+
+	// Print arguments and options
+	cmdValue := reflect.ValueOf(cmd).Elem()
+	cmdType := cmdValue.Type()
+
+	hasArgs := false
+	hasOptions := false
+
+	Echo(app.getCommandUsage(cmd, stack))
+
+	shortDesc, longDesc := cmd.Help()
+	if len(longDesc) == 0 {
+		longDesc = shortDesc
 	}
-	if len(g.Commands) > 0 {
-		fmt.Println("Commands:")
-		for name, cmd := range g.Commands {
-			fmt.Printf("  %s: %s\n", name, cmd.Help)
+
+	Echo("%s\n", longDesc)
+
+	// Then print argument details
+	if hasArgs {
+		fmt.Println("Arguments:")
+		for i := 0; i < cmdType.NumField(); i++ {
+			field := cmdType.Field(i)
+			cliTag := field.Tag.Get("cli")
+			if cliTag == "" {
+				continue
+			}
+
+			tagParts := parseCliTag(cliTag)
+			if argName, ok := tagParts["argument"]; ok {
+				help := tagParts["help"]
+				if help == "" {
+					help = fmt.Sprintf("%s argument", argName)
+				}
+				fmt.Printf("  %s => %s\n", strings.ToUpper(argName), help)
+			}
+		}
+		fmt.Println()
+	}
+
+	// Finally print option details
+	for i := 0; i < cmdType.NumField(); i++ {
+		field := cmdType.Field(i)
+		cliTag := field.Tag.Get("cli")
+		if cliTag == "" {
+			continue
+		}
+
+		tagParts := parseCliTag(cliTag)
+		if optName, ok := tagParts["option"]; ok {
+			if !hasOptions {
+				fmt.Println("Options:")
+				hasOptions = true
+			}
+
+			defaultVal := tagParts["default"]
+			help := tagParts["help"]
+			if help == "" {
+				help = fmt.Sprintf("%s option", optName)
+			}
+
+			defaultText := ""
+			if defaultVal != "" {
+				defaultText = fmt.Sprintf(" [default: %s]", defaultVal)
+			}
+
+			fmt.Printf("  --%s  %s%s\n", optName, help, defaultText)
 		}
 	}
 }
 
-// parseAnnotations parses CLI annotations from struct tags
-func parseAnnotations(tag string) map[string]string {
+// parseCliTag parses a cli tag string into a map of key-value pairs
+func parseCliTag(tag string) map[string]string {
 	result := make(map[string]string)
 	parts := strings.Split(tag, ",")
+
 	for _, part := range parts {
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) == 2 {
 			result[kv[0]] = kv[1]
-		} else {
-			result[kv[0]] = ""
+		} else if len(kv) == 1 {
+			// Handle boolean flags or other special cases
+			result[kv[0]] = "true"
 		}
 	}
+
 	return result
 }
 
+// extractParentGroup extracts the parent group from a command or group
+func extractParentGroup(obj interface{}) string {
+	val := reflect.ValueOf(obj).Elem()
+	typ := val.Type()
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+
+		// Look for the 'CliGroupClass' field with cli tag
+		if field.Type == CliGroupClass {
+			cliTag := field.Tag.Get("cli")
+			if cliTag != "" {
+				tagParts := parseCliTag(cliTag)
+				if groupName, ok := tagParts["group"]; ok {
+					return groupName
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
 // Main entry point
-func Main(ctx glue.Context) {
-	registry := NewRegistry()
+func Run(options ...Option) (err error) {
+
+	defer func() {
+		if r := recover(); r != nil {
+			switch v := r.(type) {
+			case error:
+				err = v
+			case string:
+				err = errors.New(v)
+			default:
+				err = errors.Errorf("recover:  %v", v)
+			}
+		}
+	}()
+
+	app := New(options...)
+
+	if hasVerbose(os.Args[1:]) {
+		glue.Verbose(log.Default())
+	}
+
+	ctx, err := glue.New(app.beans...)
+	if err != nil {
+		return errors.Errorf("glue.New: %v", err)
+	}
+	defer ctx.Close()
 
 	// Register all groups
 	for _, item := range ctx.Bean(CliGroupClass, 0) {
-		registry.RegisterGroup(item.Object())
+		err = app.RegisterGroup(item.Object().(CliGroup))
+		if err != nil {
+			return err
+		}
 	}
 
 	// Register all commands
 	for _, item := range ctx.Bean(CliCommandClass, 0) {
-		registry.RegisterCommand(item.Object())
+		err = app.RegisterCommand(item.Object().(CliCommand))
+		if err != nil {
+			return err
+		}
 	}
 
-	registry.Run(ctx)
+	return app.RunCLI(ctx)
+}
+
+func hasVerbose(args []string) bool {
+	for _, arg := range args {
+		if arg == "--verbose" || arg == "-v" {
+			return true
+		}
+	}
+	return false
+}
+
+func Main(options ...Option) {
+
+	if err := Run(options...); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
 }
