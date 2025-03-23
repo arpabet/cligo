@@ -61,4 +61,5 @@ func main() {
 
 That's it, very similar to python click library.
 
-Issues and contributions are welcome.
+### Contributions
+If you find a bug or issue, please create a ticket. For now no external contributions are allowed.
