@@ -48,8 +48,11 @@ type CliApplication interface {
 	Build() string
 	Verbose() bool
 
-	// Non-public method to keep beans private
+	// Non-public method to keep optional beans private
 	getBeans() []interface{}
+
+	// Non-public method to keep optional properties private
+	getProperties() glue.Properties
 
 	// RegisterGroup register the cli group in the context
 	RegisterGroup(group CliGroup) error

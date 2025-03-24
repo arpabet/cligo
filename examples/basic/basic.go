@@ -6,7 +6,6 @@
 package main
 
 import (
-	"fmt"
 	"go.arpabet.com/cligo"
 	"go.arpabet.com/glue"
 )
@@ -26,7 +25,7 @@ It uses in order to place a ship in the game.`
 }
 
 func (cmd *ShipNew) Run(ctx glue.Context) error {
-	fmt.Printf("Created ship %s\n", cmd.Name)
+	cligo.Echo("Created ship %s", cmd.Name)
 	return nil
 }
 
@@ -49,27 +48,25 @@ func (cmd *ShipMove) Help() (string, string) {
 
 func (cmd *ShipMove) Run(ctx glue.Context) error {
 	if cmd.Verbose {
-		fmt.Printf("Moving ship %s to %v,%v with speed %d (verbose mode)\n", cmd.Ship, cmd.X, cmd.Y, cmd.Speed)
+		cligo.Echo("Moving ship %s to %v,%v with speed %d (verbose mode)", cmd.Ship, cmd.X, cmd.Y, cmd.Speed)
 	} else {
-		fmt.Printf("Moving ship %s to %v,%v with speed %d\n", cmd.Ship, cmd.X, cmd.Y, cmd.Speed)
+		cligo.Echo("Moving ship %s to %v,%v with speed %d", cmd.Ship, cmd.X, cmd.Y, cmd.Speed)
 	}
 	return nil
 }
 
 func main() {
 
-	banner := `Naval Fate.
-
-	This is the docopt example adopted to cligo but with some actual
-	commands implemented and not just the empty parsing which really
-	is not all that interesting.
-	`
+	banner := `
+This is the basic CLI application example
+based on simple commands related to ship movement.
+`
 
 	beans := []interface{}{
 		&ShipNew{},
 		&ShipMove{},
 	}
 
-	cligo.Main(cligo.Name("basic"), cligo.Help(banner), cligo.Version("1.0.0"), cligo.Build("001"), cligo.Beans(beans...))
+	cligo.Main(cligo.Name("basic"), cligo.Title("Basic CliGo Application"), cligo.Help(banner), cligo.Version("1.0.0"), cligo.Build("001"), cligo.Beans(beans...))
 
 }

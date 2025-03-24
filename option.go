@@ -5,6 +5,8 @@
 
 package cligo
 
+import "go.arpabet.com/glue"
+
 // Option configures badger using the functional options paradigm
 // popularized by Rob Pike and Dave Cheney. If you're unfamiliar with this style,
 // see https://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html and
@@ -73,5 +75,12 @@ func Verbose(verbose bool) Option {
 func Beans(beans ...interface{}) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.beans = append(a.beans, beans...)
+	})
+}
+
+// option that adds properties in core context
+func Properties(properties glue.Properties) Option {
+	return optionFunc(func(a *implCliApplication) {
+		a.properties = properties
 	})
 }

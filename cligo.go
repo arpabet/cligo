@@ -29,6 +29,7 @@ type implCliApplication struct {
 	build        string
 	verbose      bool
 	beans        []interface{}
+	properties   glue.Properties
 	groups       map[string][]CliGroup
 	commands     map[string][]CliCommand
 	commandBeans map[string][]interface{}
@@ -102,6 +103,10 @@ func (app *implCliApplication) getBeans() []interface{} {
 	return app.beans
 }
 
+func (app *implCliApplication) getProperties() glue.Properties {
+	return app.properties
+}
+
 func hasVerbose(args []string) bool {
 	for _, arg := range args {
 		if arg == "--verbose" || arg == "-v" {
@@ -168,18 +173,22 @@ func (app *implCliApplication) Execute(ctx glue.Context) error {
 	}
 
 	// Check for version flag
-	if os.Args[1] == "--version" || os.Args[1] == "-v" {
-		if app.title != "" {
-			Echo(app.title)
+	if app.version != "" {
+		if os.Args[1] == "--version" || os.Args[1] == "-v" {
+			name := app.name
+			if app.title != "" {
+				name = app.title
+			}
+			if app.build != "" {
+				Echo("%s Version %s Build %s", name, app.version, app.build)
+			} else {
+				Echo("%s Version %s", name, app.version)
+			}
+			if app.help != "" {
+				Echo(app.help)
+			}
+			return nil
 		}
-		Echo("Application: %s", app.name)
-		if app.version != "" {
-			Echo("Version: %s", app.version)
-		}
-		if app.build != "" {
-			Echo("Build: %s", app.build)
-		}
-		return nil
 	}
 
 	// Check for help flag
@@ -396,7 +405,7 @@ func (app *implCliApplication) executeCommand(ctx glue.Context, cmd CliCommand, 
 		return cmd.Run(child)
 	}
 
-	// Execute the command in app context
+	// Execute the command in the appication context
 	return cmd.Run(ctx)
 }
 
@@ -421,7 +430,9 @@ func (app *implCliApplication) printHelp(groupName string, stack []string) {
 
 	if groupName == RootGroup {
 		Echo("Options:")
-		Echo("  --version  Show the version and exit.")
+		if app.version != "" {
+			Echo("  --version  Show the version and exit.")
+		}
 		Echo("  --verbose  Show extended logging information.")
 		Echo("  --help     Show this message and exit.")
 		Echo("")
@@ -609,7 +620,12 @@ func Run(options ...Option) (err error) {
 		glue.Verbose(log.Default())
 	}
 
-	ctx, err := glue.New(app.getBeans()...)
+	var ctx glue.Context
+	if app.getProperties() != nil {
+		ctx, err = glue.NewWithProperties(app.getProperties(), app.getBeans()...)
+	} else {
+		ctx, err = glue.New(app.getBeans()...)
+	}
 	if err != nil {
 		return errors.Errorf("glue.New: %v", err)
 	}
