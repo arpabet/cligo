@@ -14,8 +14,8 @@ github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO+kdMU+MU=
 github.com/stretchr/testify v1.8.2 h1:+h33VjcLVPDHtOdpUCuF+7gSuG3yGIftsP1YvFihtJ8=
 github.com/stretchr/testify v1.8.2/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
-go.arpabet.com/glue v1.2.3 h1:L/3m4sr3dEUZe81QDdCLSgT7s9oL3SKHDLo3q51/UPE=
-go.arpabet.com/glue v1.2.3/go.mod h1:0aCzgWbPJluNneB/msuh8AVu3leuHYKtu/LVBmZMMPY=
+go.arpabet.com/glue v1.2.4 h1:YdxtI0+mFkzObToGEMmbfpyh1x6z3E9V+iZ26NVajHk=
+go.arpabet.com/glue v1.2.4/go.mod h1:0aCzgWbPJluNneB/msuh8AVu3leuHYKtu/LVBmZMMPY=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
