@@ -5,7 +5,11 @@
 
 package cligo
 
-import "go.arpabet.com/glue"
+import (
+	"context"
+
+	"go.arpabet.com/glue"
+)
 
 // Option configures a cligo application using the functional options paradigm
 // popularized by Rob Pike and Dave Cheney. If you're unfamiliar with this style,
@@ -82,5 +86,13 @@ func Beans(beans ...interface{}) Option {
 func Properties(properties glue.Properties) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.properties = properties
+	})
+}
+
+// Context sets a custom base context for command execution.
+// If not provided, Run() creates a signal-aware context that cancels on SIGINT/SIGTERM.
+func Context(ctx context.Context) Option {
+	return optionFunc(func(a *implCliApplication) {
+		a.ctx = ctx
 	})
 }

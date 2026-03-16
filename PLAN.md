@@ -13,8 +13,8 @@
 
 ## Phase 2: Essential Features
 
-- [ ] **2.1** `context.Context` support — add `context.Context` to command execution path, wire to DI container. Enables timeouts, cancellation, and signal handling.
-- [ ] **2.2** Signal handling — trap SIGINT/SIGTERM, propagate via context cancellation.
+- [x] **2.1** `context.Context` support — add `context.Context` to command execution path, wire to DI container. Enables timeouts, cancellation, and signal handling.
+- [x] **2.2** Signal handling — trap SIGINT/SIGTERM, propagate via context cancellation.
 - [ ] **2.3** Required vs optional arguments — add `cli:"argument=name,required"` tag support; allow optional args with defaults.
 - [ ] **2.4** Environment variable binding — `cli:"option=port,env=APP_PORT"` reads from env if flag not provided.
 - [ ] **2.5** Validation interface — `Validate() error` method on commands, called after parsing before `Run()`.

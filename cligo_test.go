@@ -7,6 +7,7 @@ package cligo
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -70,7 +71,7 @@ type newShipCmd struct {
 
 func (c *newShipCmd) Command() string            { return "new" }
 func (c *newShipCmd) Help() (string, string)     { return "Create a ship.", "" }
-func (c *newShipCmd) Run(_ glue.Container) error { c.ran = true; return nil }
+func (c *newShipCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 // setSpeedCmd has a single int positional argument.
 type setSpeedCmd struct {
@@ -81,7 +82,7 @@ type setSpeedCmd struct {
 
 func (c *setSpeedCmd) Command() string            { return "setspeed" }
 func (c *setSpeedCmd) Help() (string, string)     { return "Set speed.", "" }
-func (c *setSpeedCmd) Run(_ glue.Container) error { c.ran = true; return nil }
+func (c *setSpeedCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 // moveShipCmd has float positional args and several typed options including a short flag.
 type moveShipCmd struct {
@@ -97,7 +98,7 @@ type moveShipCmd struct {
 
 func (c *moveShipCmd) Command() string            { return "move" }
 func (c *moveShipCmd) Help() (string, string)     { return "Move a ship.", "" }
-func (c *moveShipCmd) Run(_ glue.Container) error { c.ran = true; return nil }
+func (c *moveShipCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 // failCmd always returns an error from Run.
 type failCmd struct {
@@ -106,7 +107,7 @@ type failCmd struct {
 
 func (c *failCmd) Command() string            { return "fail" }
 func (c *failCmd) Help() (string, string)     { return "Always fails.", "" }
-func (c *failCmd) Run(_ glue.Container) error { return fmt.Errorf("intentional failure") }
+func (c *failCmd) Run(_ context.Context, _ glue.Container) error { return fmt.Errorf("intentional failure") }
 
 // panicErrCmd panics with an error value.
 type panicErrCmd struct {
@@ -115,7 +116,7 @@ type panicErrCmd struct {
 
 func (c *panicErrCmd) Command() string            { return "panicerr" }
 func (c *panicErrCmd) Help() (string, string)     { return "Panics with error.", "" }
-func (c *panicErrCmd) Run(_ glue.Container) error { panic(fmt.Errorf("panic error")) }
+func (c *panicErrCmd) Run(_ context.Context, _ glue.Container) error { panic(fmt.Errorf("panic error")) }
 
 // panicStrCmd panics with a plain string.
 type panicStrCmd struct {
@@ -124,7 +125,7 @@ type panicStrCmd struct {
 
 func (c *panicStrCmd) Command() string            { return "panicstr" }
 func (c *panicStrCmd) Help() (string, string)     { return "Panics with string.", "" }
-func (c *panicStrCmd) Run(_ glue.Container) error { panic("string panic") }
+func (c *panicStrCmd) Run(_ context.Context, _ glue.Container) error { panic("string panic") }
 
 // panicOtherCmd panics with a non-error, non-string value.
 type panicOtherCmd struct {
@@ -133,7 +134,7 @@ type panicOtherCmd struct {
 
 func (c *panicOtherCmd) Command() string            { return "panicother" }
 func (c *panicOtherCmd) Help() (string, string)     { return "Panics with int.", "" }
-func (c *panicOtherCmd) Run(_ glue.Container) error { panic(42) }
+func (c *panicOtherCmd) Run(_ context.Context, _ glue.Container) error { panic(42) }
 
 // scopeBean is a DI bean provided by beanCmd's command scope.
 type scopeBean struct{ Value string }
@@ -147,7 +148,7 @@ type beanCmd struct {
 func (c *beanCmd) Command() string              { return "wbeans" }
 func (c *beanCmd) Help() (string, string)       { return "Command with beans.", "" }
 func (c *beanCmd) CommandBeans() []interface{}  { return []interface{}{&scopeBean{Value: "injected"}} }
-func (c *beanCmd) Run(_ glue.Container) error   { c.ran = true; return nil }
+func (c *beanCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 // orphanGroup has no CliGroup field, so extractParentGroup returns "".
 type orphanGroup struct{}
@@ -160,14 +161,14 @@ type orphanCmd struct{}
 
 func (c *orphanCmd) Command() string            { return "orphan" }
 func (c *orphanCmd) Help() (string, string)     { return "Orphan command.", "" }
-func (c *orphanCmd) Run(_ glue.Container) error { return nil }
+func (c *orphanCmd) Run(_ context.Context, _ glue.Container) error { return nil }
 
 // orphanBeanCmd implements CliCommandWithBeans but has no CliGroup parent field.
 type orphanBeanCmd struct{}
 
 func (c *orphanBeanCmd) Command() string             { return "orphanbean" }
 func (c *orphanBeanCmd) Help() (string, string)      { return "Orphan bean command.", "" }
-func (c *orphanBeanCmd) Run(_ glue.Container) error  { return nil }
+func (c *orphanBeanCmd) Run(_ context.Context, _ glue.Container) error { return nil }
 func (c *orphanBeanCmd) CommandBeans() []interface{} { return nil }
 
 // ─── parseCliTag ─────────────────────────────────────────────────────────────
@@ -839,4 +840,71 @@ func TestRun_PanicRecovery_Other(t *testing.T) {
 			t.Errorf("expected 'recover:' prefix in error, got: %v", err)
 		}
 	})
+}
+
+// ─── Run: context support ────────────────────────────────────────────────────
+
+// ctxCheckCmd captures the context it receives so tests can inspect it.
+type ctxCheckCmd struct {
+	Parent CliGroup `cli:"group=cli"`
+	gotCtx context.Context
+	ran    bool
+}
+
+func (c *ctxCheckCmd) Command() string                              { return "ctxcheck" }
+func (c *ctxCheckCmd) Help() (string, string)                       { return "Check context.", "" }
+func (c *ctxCheckCmd) Run(ctx context.Context, _ glue.Container) error {
+	c.gotCtx = ctx
+	c.ran = true
+	return ctx.Err()
+}
+
+func TestRun_DefaultContext_IsNotNil(t *testing.T) {
+	cmd := &ctxCheckCmd{}
+	withArgs([]string{"app", "ctxcheck"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Error("command was not executed")
+	}
+	if cmd.gotCtx == nil {
+		t.Error("expected non-nil context even without Context option")
+	}
+}
+
+func TestRun_CustomContext_ThreadedThrough(t *testing.T) {
+	type ctxKey struct{}
+	parentCtx := context.WithValue(context.Background(), ctxKey{}, "hello")
+	cmd := &ctxCheckCmd{}
+	withArgs([]string{"app", "ctxcheck"}, func() {
+		if err := Run(Context(parentCtx), Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Error("command was not executed")
+	}
+	if cmd.gotCtx.Value(ctxKey{}) != "hello" {
+		t.Error("expected custom context value to be threaded through to command")
+	}
+}
+
+func TestRun_CancelledContext_Propagated(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+	cmd := &ctxCheckCmd{}
+	withArgs([]string{"app", "ctxcheck"}, func() {
+		err := Run(Context(ctx), Beans(cmd))
+		if err != context.Canceled {
+			t.Errorf("expected context.Canceled, got: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Error("command was not executed")
+	}
+	if cmd.gotCtx.Err() != context.Canceled {
+		t.Error("expected context to be cancelled in command")
+	}
 }

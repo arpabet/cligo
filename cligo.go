@@ -9,13 +9,16 @@
 package cligo
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/pflag"
 	"go.arpabet.com/glue"
@@ -31,6 +34,7 @@ type implCliApplication struct {
 	version      string
 	build        string
 	verbose      bool
+	ctx          context.Context
 	beans        []interface{}
 	properties   glue.Properties
 	groups       map[string][]CliGroup
@@ -110,6 +114,10 @@ func (app *implCliApplication) getProperties() glue.Properties {
 	return app.properties
 }
 
+func (app *implCliApplication) getContext() context.Context {
+	return app.ctx
+}
+
 func hasVerbose(args []string) bool {
 	for _, arg := range args {
 		if arg == "--verbose" {
@@ -169,7 +177,7 @@ func (app *implCliApplication) RegisterCommandWithBeans(cmd CliCommandWithBeans)
 }
 
 // Execute parses arguments and runs the appropriate command
-func (app *implCliApplication) Execute(c glue.Container) error {
+func (app *implCliApplication) Execute(ctx context.Context, c glue.Container) error {
 
 	if len(os.Args) < 2 {
 		app.printHelp(RootGroup, nil)
@@ -202,11 +210,11 @@ func (app *implCliApplication) Execute(c glue.Container) error {
 	}
 
 	var stack []string
-	return app.parseAndExecute(c, RootGroup, os.Args[1:], stack)
+	return app.parseAndExecute(ctx, c, RootGroup, os.Args[1:], stack)
 }
 
 // parseAndExecute recursively parses arguments and executes the appropriate command
-func (app *implCliApplication) parseAndExecute(c glue.Container, currentGroup string, args []string, stack []string) error {
+func (app *implCliApplication) parseAndExecute(ctx context.Context, c glue.Container, currentGroup string, args []string, stack []string) error {
 	if len(args) == 0 {
 		app.printHelp(currentGroup, stack)
 		return nil
@@ -220,7 +228,7 @@ func (app *implCliApplication) parseAndExecute(c glue.Container, currentGroup st
 				return nil
 			}
 			stack = append(stack, args[0])
-			return app.parseAndExecute(c, group.Group(), args[1:], stack)
+			return app.parseAndExecute(ctx, c, group.Group(), args[1:], stack)
 		}
 	}
 
@@ -232,7 +240,7 @@ func (app *implCliApplication) parseAndExecute(c glue.Container, currentGroup st
 				return nil
 			}
 			stack = append(stack, args[0])
-			return app.executeCommand(c, cmd, args[1:], stack)
+			return app.executeCommand(ctx, c, cmd, args[1:], stack)
 		}
 	}
 
@@ -253,7 +261,7 @@ func (app *implCliApplication) parseAndExecute(c glue.Container, currentGroup st
 }
 
 // executeCommand parses arguments and options for a command and executes it
-func (app *implCliApplication) executeCommand(c glue.Container, cmd CliCommand, args []string, stack []string) error {
+func (app *implCliApplication) executeCommand(ctx context.Context, c glue.Container, cmd CliCommand, args []string, stack []string) error {
 	// Create a new value to store the parsed arguments
 	cmdValue := reflect.ValueOf(cmd).Elem()
 	cmdType := cmdValue.Type()
@@ -423,11 +431,11 @@ func (app *implCliApplication) executeCommand(c glue.Container, cmd CliCommand, 
 			return fmt.Errorf("fail to initialize '%s' command scope context, %v", cmd.Command(), err)
 		}
 		defer child.Close()
-		return cmd.Run(child)
+		return cmd.Run(ctx, child)
 	}
 
-	// Execute the command in the appication context
-	return cmd.Run(c)
+	// Execute the command in the application context
+	return cmd.Run(ctx, c)
 }
 
 // printHelp prints help for a group
@@ -661,6 +669,14 @@ func Run(options ...Option) (err error) {
 	}
 	defer c.Close()
 
+	// Use user-provided context or create a signal-aware one
+	ctx := app.getContext()
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer cancel()
+	}
+
 	visited := make(map[uintptr]bool)
 
 	// Register all groups
@@ -705,7 +721,7 @@ func Run(options ...Option) (err error) {
 		}
 	}
 
-	return app.Execute(c)
+	return app.Execute(ctx, c)
 }
 
 // Main is the standard entry point for CLI applications.

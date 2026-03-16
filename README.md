@@ -16,6 +16,8 @@ go get go.arpabet.com/cligo
 package main
 
 import (
+    "context"
+
     "go.arpabet.com/cligo"
     "go.arpabet.com/glue"
 )
@@ -25,9 +27,9 @@ type Greet struct {
     Name   string         `cli:"argument=name"`
 }
 
-func (cmd *Greet) Command() string              { return "greet" }
-func (cmd *Greet) Help() (string, string)       { return "Greet someone.", "" }
-func (cmd *Greet) Run(ctx glue.Container) error {
+func (cmd *Greet) Command() string                                  { return "greet" }
+func (cmd *Greet) Help() (string, string)                           { return "Greet someone.", "" }
+func (cmd *Greet) Run(ctx context.Context, c glue.Container) error  {
     cligo.Echo("Hello, %s!", cmd.Name)
     return nil
 }
@@ -101,9 +103,9 @@ type ShipNew struct {
     Name   string         `cli:"argument=name"`
 }
 
-func (cmd *ShipNew) Command() string              { return "new" }
-func (cmd *ShipNew) Help() (string, string)       { return "Create a new ship.", "" }
-func (cmd *ShipNew) Run(ctx glue.Container) error {
+func (cmd *ShipNew) Command() string                                  { return "new" }
+func (cmd *ShipNew) Help() (string, string)                           { return "Create a new ship.", "" }
+func (cmd *ShipNew) Run(ctx context.Context, c glue.Container) error  {
     cligo.Echo("Created ship %s", cmd.Name)
     return nil
 }
@@ -179,6 +181,7 @@ cligo.Main(
     cligo.Version("1.0.0"),       // Enables --version / -V flag
     cligo.Build("abc123"),        // Build identifier shown alongside version
     cligo.Verbose(true),          // Force verbose mode
+    cligo.Context(ctx),           // Custom context (defaults to signal-aware context)
     cligo.Beans(beans...),        // Register groups and commands
     cligo.Properties(props),      // Glue properties for DI
 )
@@ -192,6 +195,7 @@ cligo.Main(
 | `Version(s)` | Version string; enables `--version` / `-V` |
 | `Build(s)` | Build identifier shown with version |
 | `Verbose(b)` | Force verbose mode on |
+| `Context(ctx)` | Custom `context.Context` (defaults to signal-aware context) |
 | `Beans(b...)` | Groups, commands, and other DI beans |
 | `Properties(p)` | Glue properties for dependency injection |
 | `Nope()` | No-op (useful for conditional options) |
@@ -206,9 +210,38 @@ These flags are handled automatically:
 | `--version`, `-V` | Show version and build info (requires `Version()` option) |
 | `--verbose` | Enable verbose logging via glue |
 
+## Context & Signal Handling
+
+Every command receives a `context.Context` as the first argument to `Run()`. By default, cligo creates a signal-aware context that is cancelled on `SIGINT` or `SIGTERM`, enabling graceful shutdown:
+
+```go
+func (cmd *Serve) Run(ctx context.Context, c glue.Container) error {
+    server := &http.Server{Addr: ":8080"}
+    go func() {
+        <-ctx.Done() // cancelled on Ctrl+C
+        server.Shutdown(context.Background())
+    }()
+    return server.ListenAndServe()
+}
+```
+
+To provide a custom context (e.g., with a timeout or custom values), use the `Context()` option:
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+
+cligo.Main(
+    cligo.Context(ctx),
+    cligo.Beans(&Serve{}),
+)
+```
+
+If no `Context()` option is provided, cligo creates a context via `signal.NotifyContext` that listens for `SIGINT` and `SIGTERM`.
+
 ## Dependency Injection
 
-Cligo is built on top of [glue](https://go.arpabet.com/glue), a dependency injection framework. Every command receives a `glue.Container` in its `Run()` method, giving access to all registered beans.
+Cligo is built on top of [glue](https://go.arpabet.com/glue), a dependency injection framework. Every command receives a `context.Context` and a `glue.Container` in its `Run()` method, giving access to cancellation signals and all registered beans.
 
 All structs passed via `Beans()` are automatically registered in the glue container. Groups and commands are discovered by interface type and registered with the CLI application.
 
@@ -223,13 +256,14 @@ type MigrateCmd struct {
     Parent cligo.CliGroup `cli:"group=cli"`
 }
 
-func (cmd *MigrateCmd) Command() string              { return "migrate" }
-func (cmd *MigrateCmd) Help() (string, string)       { return "Run migrations.", "" }
+func (cmd *MigrateCmd) Command() string                                  { return "migrate" }
+func (cmd *MigrateCmd) Help() (string, string)                           { return "Run migrations.", "" }
 func (cmd *MigrateCmd) CommandBeans() []interface{}  {
     return []interface{}{&DatabaseService{}}
 }
-func (cmd *MigrateCmd) Run(ctx glue.Container) error {
-    // ctx is an extended container with DatabaseService available
+func (cmd *MigrateCmd) Run(ctx context.Context, c glue.Container) error  {
+    // c is an extended container with DatabaseService available
+    // ctx carries cancellation/timeout signals
     return nil
 }
 ```
@@ -279,7 +313,7 @@ type CliGroup interface {
 type CliCommand interface {
     Command() string
     Help() (short string, optionalLong string)
-    Run(c glue.Container) error
+    Run(ctx context.Context, c glue.Container) error
 }
 
 // CliCommandWithBeans extends CliCommand with command-scoped DI beans.

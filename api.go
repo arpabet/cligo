@@ -6,6 +6,7 @@
 package cligo
 
 import (
+	"context"
 	"reflect"
 
 	"go.arpabet.com/glue"
@@ -27,8 +28,8 @@ type CliCommand interface {
 	Command() string
 	// Help description about the command
 	Help() (short string, optionalLong string)
-	// Run executes the command in context
-	Run(c glue.Container) error
+	// Run executes the command with the given context and DI container.
+	Run(ctx context.Context, c glue.Container) error
 }
 
 var CliCommandWithBeansClass = reflect.TypeOf((*CliCommandWithBeans)(nil)).Elem()
@@ -55,6 +56,9 @@ type CliApplication interface {
 	// Non-public method to keep optional properties private
 	getProperties() glue.Properties
 
+	// Non-public method to keep optional context private
+	getContext() context.Context
+
 	// RegisterGroup register the cli group in the context
 	RegisterGroup(group CliGroup) error
 
@@ -64,6 +68,6 @@ type CliApplication interface {
 	// RegisterCommandWithBeans register the cli command with beans in the context
 	RegisterCommandWithBeans(cmd CliCommandWithBeans) error
 
-	// Execute - Run CLI
-	Execute(c glue.Container) error
+	// Execute - Run CLI with the given context
+	Execute(ctx context.Context, c glue.Container) error
 }
