@@ -653,7 +653,7 @@ func Run(options ...Option) (err error) {
 
 	app := New(options...)
 
-	glueOpts := []glue.ContainerOption{}
+	var glueOpts []glue.ContainerOption
 
 	if hasVerbose(os.Args[1:]) {
 		glueOpts = append(glueOpts, glue.WithLogger(log.Default()))
