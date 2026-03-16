@@ -7,7 +7,7 @@ package cligo
 
 import "go.arpabet.com/glue"
 
-// Option configures badger using the functional options paradigm
+// Option configures a cligo application using the functional options paradigm
 // popularized by Rob Pike and Dave Cheney. If you're unfamiliar with this style,
 // see https://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html and
 // https://dave.cheney.net/2014/10/17/functional-options-for-friendly-apis.
@@ -23,62 +23,62 @@ func (fn optionFunc) apply(a *implCliApplication) {
 	fn(a)
 }
 
-// option that do nothing
+// Nope returns a no-op option (useful for conditional configuration).
 func Nope() Option {
 	return optionFunc(func(*implCliApplication) {
 	})
 }
 
-// option that adds app name
+// Name sets the application name (defaults to the binary name from os.Args[0]).
 func Name(name string) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.name = name
 	})
 }
 
-// option that adds app help
+// Title sets the display title shown in --version output.
 func Title(title string) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.title = title
 	})
 }
 
-// option that adds app help
+// Help sets the application description shown in help output.
 func Help(help string) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.help = help
 	})
 }
 
-// option that adds version
+// Version sets the version string and enables the --version / -V flag.
 func Version(version string) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.version = version
 	})
 }
 
-// option that adds build number
+// Build sets the build identifier displayed alongside the version.
 func Build(build string) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.build = build
 	})
 }
 
-// option that adds verbose
+// Verbose forces verbose mode on (also enabled by --verbose flag).
 func Verbose(verbose bool) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.verbose = verbose
 	})
 }
 
-// option that adds beans
+// Beans registers groups, commands, and other DI beans with the application.
 func Beans(beans ...interface{}) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.beans = append(a.beans, beans...)
 	})
 }
 
-// option that adds properties in core context
+// Properties sets glue properties for dependency injection into the root container.
 func Properties(properties glue.Properties) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.properties = properties

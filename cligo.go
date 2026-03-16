@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: BUSL-1.1
  */
 
+// Package cligo is a declarative CLI framework for Go, inspired by Python's Click.
+// Commands and groups are defined as structs implementing CliCommand and CliGroup interfaces,
+// with arguments and options declared via struct tags. Built on top of the glue DI framework.
 package cligo
 
 import (
@@ -14,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 	"go.arpabet.com/glue"
 )
@@ -110,13 +112,14 @@ func (app *implCliApplication) getProperties() glue.Properties {
 
 func hasVerbose(args []string) bool {
 	for _, arg := range args {
-		if arg == "--verbose" || arg == "-v" {
+		if arg == "--verbose" {
 			return true
 		}
 	}
 	return false
 }
 
+// Echo prints a formatted line to stdout. With an empty format string, it prints a blank line.
 func Echo(format string, args ...interface{}) {
 	if len(format) == 0 {
 		println()
@@ -129,7 +132,7 @@ func Echo(format string, args ...interface{}) {
 func (app *implCliApplication) RegisterGroup(group CliGroup) error {
 	parentGroup := extractParentGroup(group)
 	if parentGroup == "" {
-		return errors.Errorf("parent group not found in cli group: %v", group)
+		return fmt.Errorf("parent group not found in cli group: %v", group)
 	}
 	app.groups[parentGroup] = append(app.groups[parentGroup], group)
 	shortDesc, longDesc := group.Help()
@@ -144,7 +147,7 @@ func (app *implCliApplication) RegisterGroup(group CliGroup) error {
 func (app *implCliApplication) RegisterCommand(cmd CliCommand) error {
 	parentGroup := extractParentGroup(cmd)
 	if parentGroup == "" {
-		return errors.Errorf("parent group not found in cli command: %v", cmd)
+		return fmt.Errorf("parent group not found in cli command: %v", cmd)
 	}
 	app.commands[parentGroup] = append(app.commands[parentGroup], cmd)
 	return nil
@@ -154,7 +157,7 @@ func (app *implCliApplication) RegisterCommand(cmd CliCommand) error {
 func (app *implCliApplication) RegisterCommandWithBeans(cmd CliCommandWithBeans) error {
 	parentGroup := extractParentGroup(cmd)
 	if parentGroup == "" {
-		return errors.Errorf("parent group not found in cli command: %v", cmd)
+		return fmt.Errorf("parent group not found in cli command: %v", cmd)
 	}
 	app.commands[parentGroup] = append(app.commands[parentGroup], cmd)
 
@@ -175,7 +178,7 @@ func (app *implCliApplication) Execute(c glue.Container) error {
 
 	// Check for version flag
 	if app.version != "" {
-		if os.Args[1] == "--version" || os.Args[1] == "-v" {
+		if os.Args[1] == "--version" || os.Args[1] == "-V" {
 			name := app.name
 			if app.title != "" {
 				name = app.title
@@ -239,7 +242,7 @@ func (app *implCliApplication) parseAndExecute(c glue.Container, currentGroup st
 		return nil
 	}
 
-	if args[0] == "--verbose" || args[0] == "-v" {
+	if args[0] == "--verbose" {
 		app.verbose = true
 		app.printHelp(currentGroup, stack)
 		return nil
@@ -286,39 +289,54 @@ func (app *implCliApplication) executeCommand(c glue.Container, cmd CliCommand, 
 			fieldVal := cmdValue.Field(i)
 			options[optName] = fieldVal
 
+			shortFlag := strings.TrimPrefix(tagParts["short"], "-")
+			helpText := tagParts["help"]
+
 			// Register flag with the flag set based on field type
 			switch fieldVal.Kind() {
 			case reflect.String:
 				defaultVal := tagParts["default"]
-				helpText := tagParts["help"]
-				flagSet.String(optName, defaultVal, helpText)
+				if shortFlag != "" {
+					flagSet.StringP(optName, shortFlag, defaultVal, helpText)
+				} else {
+					flagSet.String(optName, defaultVal, helpText)
+				}
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 				defaultVal := 0
 				if val, ok := tagParts["default"]; ok {
 					defaultVal, _ = strconv.Atoi(val)
 				}
-				helpText := tagParts["help"]
-				flagSet.Int(optName, defaultVal, helpText)
+				if shortFlag != "" {
+					flagSet.IntP(optName, shortFlag, defaultVal, helpText)
+				} else {
+					flagSet.Int(optName, defaultVal, helpText)
+				}
 			case reflect.Float32, reflect.Float64:
 				defaultVal := 0.0
 				if val, ok := tagParts["default"]; ok {
 					defaultVal, _ = strconv.ParseFloat(val, 64)
 				}
-				helpText := tagParts["help"]
-				flagSet.Float64(optName, defaultVal, helpText)
+				if shortFlag != "" {
+					flagSet.Float64P(optName, shortFlag, defaultVal, helpText)
+				} else {
+					flagSet.Float64(optName, defaultVal, helpText)
+				}
 			case reflect.Bool:
 				defaultVal := false
 				if val, ok := tagParts["default"]; ok {
 					defaultVal = val == "true"
 				}
-				helpText := tagParts["help"]
-				flagSet.Bool(optName, defaultVal, helpText)
+				if shortFlag != "" {
+					flagSet.BoolP(optName, shortFlag, defaultVal, helpText)
+				} else {
+					flagSet.Bool(optName, defaultVal, helpText)
+				}
 			}
 		}
 	}
 
 	// Add help option
-	isHelp := flagSet.Bool("help", false, "Print help")
+	isHelp := flagSet.BoolP("help", "h", false, "Print help")
 	isVerbose := flagSet.Bool("verbose", false, "Verbose output")
 
 	// Parse flags
@@ -334,8 +352,10 @@ func (app *implCliApplication) executeCommand(c glue.Container, cmd CliCommand, 
 		return nil
 	}
 
-	// update verbose flag based on options
-	app.verbose = *isVerbose
+	// update verbose flag only if explicitly passed at command level
+	if *isVerbose {
+		app.verbose = true
+	}
 
 	// Handle positional arguments
 	//if len(argValues) < len(arguments) {
@@ -375,8 +395,8 @@ func (app *implCliApplication) executeCommand(c glue.Container, cmd CliCommand, 
 		argIndex++
 	}
 
-	// Set option values
-	flagSet.Visit(func(f *pflag.Flag) {
+	// Set option values, including flags not explicitly set so defaults are applied.
+	flagSet.VisitAll(func(f *pflag.Flag) {
 		if field, ok := options[f.Name]; ok {
 			// Set the field value based on its type
 			switch field.Kind() {
@@ -493,7 +513,6 @@ func (app *implCliApplication) printCommandHelp(cmd CliCommand, stack []string) 
 	cmdValue := reflect.ValueOf(cmd).Elem()
 	cmdType := cmdValue.Type()
 
-	hasArgs := false
 	hasOptions := false
 
 	Echo(app.getCommandUsage(cmd, stack))
@@ -505,24 +524,28 @@ func (app *implCliApplication) printCommandHelp(cmd CliCommand, stack []string) 
 
 	Echo("%s\n", longDesc)
 
-	// Then print argument details
-	if hasArgs {
-		fmt.Println("Arguments:")
-		for i := 0; i < cmdType.NumField(); i++ {
-			field := cmdType.Field(i)
-			cliTag := field.Tag.Get("cli")
-			if cliTag == "" {
-				continue
-			}
+	// Print argument details
+	var argLines []string
+	for i := 0; i < cmdType.NumField(); i++ {
+		field := cmdType.Field(i)
+		cliTag := field.Tag.Get("cli")
+		if cliTag == "" {
+			continue
+		}
 
-			tagParts := parseCliTag(cliTag)
-			if argName, ok := tagParts["argument"]; ok {
-				help := tagParts["help"]
-				if help == "" {
-					help = fmt.Sprintf("%s argument", argName)
-				}
-				fmt.Printf("  %s => %s\n", strings.ToUpper(argName), help)
+		tagParts := parseCliTag(cliTag)
+		if argName, ok := tagParts["argument"]; ok {
+			help := tagParts["help"]
+			if help == "" {
+				help = fmt.Sprintf("%s argument", argName)
 			}
+			argLines = append(argLines, fmt.Sprintf("  %s\t%s", strings.ToUpper(argName), help))
+		}
+	}
+	if len(argLines) > 0 {
+		fmt.Println("Arguments:")
+		for _, line := range argLines {
+			fmt.Println(line)
 		}
 		fmt.Println()
 	}
@@ -561,6 +584,9 @@ func (app *implCliApplication) printCommandHelp(cmd CliCommand, stack []string) 
 // parseCliTag parses a cli tag string into a map of key-value pairs
 func parseCliTag(tag string) map[string]string {
 	result := make(map[string]string)
+	if tag == "" {
+		return result
+	}
 	parts := strings.Split(tag, ",")
 
 	for _, part := range parts {
@@ -599,7 +625,9 @@ func extractParentGroup(obj interface{}) string {
 	return ""
 }
 
-// Run entry point
+// Run creates the application, sets up the glue DI container, discovers all
+// registered groups and commands, then parses os.Args and executes the matched command.
+// Returns an error on failure. Panics from command execution are recovered and returned as errors.
 func Run(options ...Option) (err error) {
 
 	defer func() {
@@ -608,9 +636,9 @@ func Run(options ...Option) (err error) {
 			case error:
 				err = v
 			case string:
-				err = errors.New(v)
+				err = fmt.Errorf("%s", v)
 			default:
-				err = errors.Errorf("recover:  %v", v)
+				err = fmt.Errorf("recover: %v", v)
 			}
 		}
 	}()
@@ -629,7 +657,7 @@ func Run(options ...Option) (err error) {
 
 	c, err := glue.NewWithOptions(glueOpts, app.getBeans()...)
 	if err != nil {
-		return errors.Errorf("glue.New: %v", err)
+		return fmt.Errorf("glue.New: %w", err)
 	}
 	defer c.Close()
 
@@ -680,6 +708,8 @@ func Run(options ...Option) (err error) {
 	return app.Execute(c)
 }
 
+// Main is the standard entry point for CLI applications.
+// It calls Run and prints the error to stdout and exits with code 1 on failure.
 func Main(options ...Option) {
 
 	if err := Run(options...); err != nil {
