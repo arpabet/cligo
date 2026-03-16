@@ -7,15 +7,16 @@ package cligo
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
-	"github.com/spf13/pflag"
-	"go.arpabet.com/glue"
 	"log"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
+	"go.arpabet.com/glue"
 )
 
 var RootGroup = "cli"
@@ -165,7 +166,7 @@ func (app *implCliApplication) RegisterCommandWithBeans(cmd CliCommandWithBeans)
 }
 
 // Execute parses arguments and runs the appropriate command
-func (app *implCliApplication) Execute(ctx glue.Context) error {
+func (app *implCliApplication) Execute(c glue.Container) error {
 
 	if len(os.Args) < 2 {
 		app.printHelp(RootGroup, nil)
@@ -198,11 +199,11 @@ func (app *implCliApplication) Execute(ctx glue.Context) error {
 	}
 
 	var stack []string
-	return app.parseAndExecute(ctx, RootGroup, os.Args[1:], stack)
+	return app.parseAndExecute(c, RootGroup, os.Args[1:], stack)
 }
 
 // parseAndExecute recursively parses arguments and executes the appropriate command
-func (app *implCliApplication) parseAndExecute(ctx glue.Context, currentGroup string, args []string, stack []string) error {
+func (app *implCliApplication) parseAndExecute(c glue.Container, currentGroup string, args []string, stack []string) error {
 	if len(args) == 0 {
 		app.printHelp(currentGroup, stack)
 		return nil
@@ -216,7 +217,7 @@ func (app *implCliApplication) parseAndExecute(ctx glue.Context, currentGroup st
 				return nil
 			}
 			stack = append(stack, args[0])
-			return app.parseAndExecute(ctx, group.Group(), args[1:], stack)
+			return app.parseAndExecute(c, group.Group(), args[1:], stack)
 		}
 	}
 
@@ -228,7 +229,7 @@ func (app *implCliApplication) parseAndExecute(ctx glue.Context, currentGroup st
 				return nil
 			}
 			stack = append(stack, args[0])
-			return app.executeCommand(ctx, cmd, args[1:], stack)
+			return app.executeCommand(c, cmd, args[1:], stack)
 		}
 	}
 
@@ -249,7 +250,7 @@ func (app *implCliApplication) parseAndExecute(ctx glue.Context, currentGroup st
 }
 
 // executeCommand parses arguments and options for a command and executes it
-func (app *implCliApplication) executeCommand(ctx glue.Context, cmd CliCommand, args []string, stack []string) error {
+func (app *implCliApplication) executeCommand(c glue.Container, cmd CliCommand, args []string, stack []string) error {
 	// Create a new value to store the parsed arguments
 	cmdValue := reflect.ValueOf(cmd).Elem()
 	cmdType := cmdValue.Type()
@@ -396,7 +397,7 @@ func (app *implCliApplication) executeCommand(ctx glue.Context, cmd CliCommand, 
 
 	cmdBeans, ok := app.commandBeans[cmd.Command()]
 	if ok && len(cmdBeans) > 0 {
-		child, err := ctx.Extend(cmdBeans...)
+		child, err := c.Extend(cmdBeans...)
 		if err != nil {
 			Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
 			return fmt.Errorf("fail to initialize '%s' command scope context, %v", cmd.Command(), err)
@@ -406,7 +407,7 @@ func (app *implCliApplication) executeCommand(ctx glue.Context, cmd CliCommand, 
 	}
 
 	// Execute the command in the appication context
-	return cmd.Run(ctx)
+	return cmd.Run(c)
 }
 
 // printHelp prints help for a group
@@ -616,25 +617,26 @@ func Run(options ...Option) (err error) {
 
 	app := New(options...)
 
+	glueOpts := []glue.ContainerOption{}
+
 	if hasVerbose(os.Args[1:]) {
-		glue.Verbose(log.Default())
+		glueOpts = append(glueOpts, glue.WithLogger(log.Default()))
 	}
 
-	var ctx glue.Context
 	if app.getProperties() != nil {
-		ctx, err = glue.NewWithProperties(app.getProperties(), app.getBeans()...)
-	} else {
-		ctx, err = glue.New(app.getBeans()...)
+		glueOpts = append(glueOpts, glue.WithProperties(app.getProperties()))
 	}
+
+	c, err := glue.NewWithOptions(glueOpts, app.getBeans()...)
 	if err != nil {
 		return errors.Errorf("glue.New: %v", err)
 	}
-	defer ctx.Close()
+	defer c.Close()
 
 	visited := make(map[uintptr]bool)
 
 	// Register all groups
-	for _, item := range ctx.Bean(CliGroupClass, 0) {
+	for _, item := range c.Bean(CliGroupClass, 0) {
 		obj := item.Object()
 		addr := reflect.ValueOf(obj).Pointer()
 		if visited[addr] {
@@ -648,7 +650,7 @@ func Run(options ...Option) (err error) {
 	}
 
 	// Register all commands with beans
-	for _, item := range ctx.Bean(CliCommandWithBeansClass, 0) {
+	for _, item := range c.Bean(CliCommandWithBeansClass, 0) {
 		obj := item.Object()
 		addr := reflect.ValueOf(obj).Pointer()
 		if visited[addr] {
@@ -662,7 +664,7 @@ func Run(options ...Option) (err error) {
 	}
 
 	// Register all commands
-	for _, item := range ctx.Bean(CliCommandClass, 0) {
+	for _, item := range c.Bean(CliCommandClass, 0) {
 		obj := item.Object()
 		addr := reflect.ValueOf(obj).Pointer()
 		if visited[addr] {
@@ -675,7 +677,7 @@ func Run(options ...Option) (err error) {
 		}
 	}
 
-	return app.Execute(ctx)
+	return app.Execute(c)
 }
 
 func Main(options ...Option) {
