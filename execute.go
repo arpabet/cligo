@@ -107,5 +107,8 @@ func (t *implCliApplication) parseAndExecute(ctx context.Context, c glue.Contain
 	}
 
 	t.printHelp(currentGroup, stack)
+	if suggestion := t.suggest(currentGroup, args[0]); suggestion != "" {
+		return fmt.Errorf("unknown command or group: %s. Did you mean %q?", args[0], suggestion)
+	}
 	return fmt.Errorf("unknown command or group: %s", args[0])
 }
