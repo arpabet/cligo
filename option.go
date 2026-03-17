@@ -96,3 +96,12 @@ func Context(ctx context.Context) Option {
 		a.ctx = ctx
 	})
 }
+
+// Color forces colored output on or off.
+// By default, color is auto-detected: enabled for terminals, disabled for pipes.
+// Respects the NO_COLOR environment variable (https://no-color.org/).
+func Color(enabled bool) Option {
+	return optionFunc(func(a *implCliApplication) {
+		a.color = &enabled
+	})
+}

@@ -34,6 +34,7 @@ type implCliApplication struct {
 	version      string
 	build        string
 	verbose      bool
+	color        *bool
 	ctx          context.Context
 	beans        []interface{}
 	properties   glue.Properties
@@ -41,6 +42,17 @@ type implCliApplication struct {
 	commands     map[string][]CliCommand
 	commandBeans map[string][]interface{}
 	helps        map[string]string
+	hidden       map[interface{}]bool
+	aliasOf      map[interface{}]string
+	cmdAliases   map[string]map[string]CliCommand
+	groupAliases map[string]map[string]CliGroup
+}
+
+// parentInfo holds metadata extracted from the CliGroup parent field tag.
+type parentInfo struct {
+	group  string
+	hidden bool
+	alias  string
 }
 
 // New creates a new CLI application
@@ -50,6 +62,10 @@ func New(options ...Option) CliApplication {
 		commands:     make(map[string][]CliCommand),
 		commandBeans: make(map[string][]interface{}),
 		helps:        make(map[string]string),
+		hidden:       make(map[interface{}]bool),
+		aliasOf:      make(map[interface{}]string),
+		cmdAliases:   make(map[string]map[string]CliCommand),
+		groupAliases: make(map[string]map[string]CliGroup),
 	}
 
 	// first bean is application itself
@@ -138,11 +154,21 @@ func Echo(format string, args ...interface{}) {
 
 // RegisterGroup registers a command group
 func (app *implCliApplication) RegisterGroup(group CliGroup) error {
-	parentGroup := extractParentGroup(group)
-	if parentGroup == "" {
+	info := extractParentInfo(group)
+	if info.group == "" {
 		return fmt.Errorf("parent group not found in cli group: %v", group)
 	}
-	app.groups[parentGroup] = append(app.groups[parentGroup], group)
+	app.groups[info.group] = append(app.groups[info.group], group)
+	if info.hidden {
+		app.hidden[group] = true
+	}
+	if info.alias != "" {
+		app.aliasOf[group] = info.alias
+		if app.groupAliases[info.group] == nil {
+			app.groupAliases[info.group] = make(map[string]CliGroup)
+		}
+		app.groupAliases[info.group][info.alias] = group
+	}
 	shortDesc, longDesc := group.Help()
 	if len(longDesc) == 0 {
 		longDesc = shortDesc
@@ -153,21 +179,41 @@ func (app *implCliApplication) RegisterGroup(group CliGroup) error {
 
 // RegisterCommand registers a command
 func (app *implCliApplication) RegisterCommand(cmd CliCommand) error {
-	parentGroup := extractParentGroup(cmd)
-	if parentGroup == "" {
+	info := extractParentInfo(cmd)
+	if info.group == "" {
 		return fmt.Errorf("parent group not found in cli command: %v", cmd)
 	}
-	app.commands[parentGroup] = append(app.commands[parentGroup], cmd)
+	app.commands[info.group] = append(app.commands[info.group], cmd)
+	if info.hidden {
+		app.hidden[cmd] = true
+	}
+	if info.alias != "" {
+		app.aliasOf[cmd] = info.alias
+		if app.cmdAliases[info.group] == nil {
+			app.cmdAliases[info.group] = make(map[string]CliCommand)
+		}
+		app.cmdAliases[info.group][info.alias] = cmd
+	}
 	return nil
 }
 
 // RegisterCommandWithBeans registers a command with beans
 func (app *implCliApplication) RegisterCommandWithBeans(cmd CliCommandWithBeans) error {
-	parentGroup := extractParentGroup(cmd)
-	if parentGroup == "" {
+	info := extractParentInfo(cmd)
+	if info.group == "" {
 		return fmt.Errorf("parent group not found in cli command: %v", cmd)
 	}
-	app.commands[parentGroup] = append(app.commands[parentGroup], cmd)
+	app.commands[info.group] = append(app.commands[info.group], cmd)
+	if info.hidden {
+		app.hidden[cmd] = true
+	}
+	if info.alias != "" {
+		app.aliasOf[cmd] = info.alias
+		if app.cmdAliases[info.group] == nil {
+			app.cmdAliases[info.group] = make(map[string]CliCommand)
+		}
+		app.cmdAliases[info.group][info.alias] = cmd
+	}
 
 	commandBeans := cmd.CommandBeans()
 	if len(commandBeans) > 0 {
@@ -220,28 +266,26 @@ func (app *implCliApplication) parseAndExecute(ctx context.Context, c glue.Conta
 		return nil
 	}
 
-	// Check if the first argument is a group
-	for _, group := range app.groups[currentGroup] {
-		if group.Group() == args[0] {
-			if len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
-				app.printHelp(group.Group(), stack)
-				return nil
-			}
-			stack = append(stack, args[0])
-			return app.parseAndExecute(ctx, c, group.Group(), args[1:], stack)
+	// Check if the first argument is a group (by name or alias)
+	matchedGroup := app.findGroup(currentGroup, args[0])
+	if matchedGroup != nil {
+		if len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
+			app.printHelp(matchedGroup.Group(), stack)
+			return nil
 		}
+		stack = append(stack, args[0])
+		return app.parseAndExecute(ctx, c, matchedGroup.Group(), args[1:], stack)
 	}
 
-	// Check if the first argument is a command
-	for _, cmd := range app.commands[currentGroup] {
-		if cmd.Command() == args[0] {
-			if len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
-				app.printCommandHelp(cmd, stack)
-				return nil
-			}
-			stack = append(stack, args[0])
-			return app.executeCommand(ctx, c, cmd, args[1:], stack)
+	// Check if the first argument is a command (by name or alias)
+	matchedCmd := app.findCommand(currentGroup, args[0])
+	if matchedCmd != nil {
+		if len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
+			app.printCommandHelp(matchedCmd, stack)
+			return nil
 		}
+		stack = append(stack, args[0])
+		return app.executeCommand(ctx, c, matchedCmd, args[1:], stack)
 	}
 
 	// Check if the first argument is a know option
@@ -258,6 +302,34 @@ func (app *implCliApplication) parseAndExecute(ctx context.Context, c glue.Conta
 
 	app.printHelp(currentGroup, stack)
 	return fmt.Errorf("unknown command or group: %s", args[0])
+}
+
+func (app *implCliApplication) findGroup(parentGroup, name string) CliGroup {
+	for _, group := range app.groups[parentGroup] {
+		if group.Group() == name {
+			return group
+		}
+	}
+	if aliasMap, ok := app.groupAliases[parentGroup]; ok {
+		if group, ok := aliasMap[name]; ok {
+			return group
+		}
+	}
+	return nil
+}
+
+func (app *implCliApplication) findCommand(parentGroup, name string) CliCommand {
+	for _, cmd := range app.commands[parentGroup] {
+		if cmd.Command() == name {
+			return cmd
+		}
+	}
+	if aliasMap, ok := app.cmdAliases[parentGroup]; ok {
+		if cmd, ok := aliasMap[name]; ok {
+			return cmd
+		}
+	}
+	return nil
 }
 
 // executeCommand parses arguments and options for a command and executes it
@@ -465,9 +537,9 @@ func (app *implCliApplication) printHelp(groupName string, stack []string) {
 	path := strings.Join(stack, " ")
 
 	if len(groups)+len(commands) > 0 {
-		Echo("Usage: %s %s [OPTIONS] COMMAND [ARGS]...", app.name, path)
+		Echo("%s: %s %s [OPTIONS] COMMAND [ARGS]...", app.styled("Usage", ansiBold), app.name, path)
 	} else {
-		Echo("Usage: %s %s [OPTIONS] [ARGS]...", app.name, path)
+		Echo("%s: %s %s [OPTIONS] [ARGS]...", app.styled("Usage", ansiBold), app.name, path)
 	}
 
 	help := app.helps[groupName]
@@ -476,24 +548,38 @@ func (app *implCliApplication) printHelp(groupName string, stack []string) {
 	}
 
 	if groupName == RootGroup {
-		Echo("Options:")
+		Echo("%s:", app.styled("Options", ansiBold))
 		if app.version != "" {
-			Echo("  --version  Show the version and exit.")
+			Echo("  %s  Show the version and exit.", app.styled("--version", ansiYellow))
 		}
-		Echo("  --verbose  Show extended logging information.")
-		Echo("  --help     Show this message and exit.")
+		Echo("  %s  Show extended logging information.", app.styled("--verbose", ansiYellow))
+		Echo("  %s     Show this message and exit.", app.styled("--help", ansiYellow))
 		Echo("")
 	}
 
-	Echo("Commands:")
+	Echo("%s:", app.styled("Commands", ansiBold))
 	for _, grp := range groups {
+		if app.hidden[grp] {
+			continue
+		}
 		shortDesc, _ := grp.Help()
-		Echo("  %s\t%s", grp.Group(), shortDesc)
+		name := app.styled(grp.Group(), ansiCyan)
+		if alias, ok := app.aliasOf[grp]; ok {
+			name = name + " (" + alias + ")"
+		}
+		Echo("  %s\t%s", name, shortDesc)
 	}
 
 	for _, cmd := range commands {
+		if app.hidden[cmd] {
+			continue
+		}
 		shortDesc, _ := cmd.Help()
-		Echo("  %s\t%s", cmd.Command(), shortDesc)
+		name := app.styled(cmd.Command(), ansiCyan)
+		if alias, ok := app.aliasOf[cmd]; ok {
+			name = name + " (" + alias + ")"
+		}
+		Echo("  %s\t%s", name, shortDesc)
 	}
 
 }
@@ -529,7 +615,7 @@ func (app *implCliApplication) getCommandUsage(cmd CliCommand, stack []string) s
 	path := strings.Join(stack, " ")
 	argsLine := strings.Join(arguments, " ")
 
-	return fmt.Sprintf("Usage: %s %s [OPTIONS] %s", app.name, path, argsLine)
+	return fmt.Sprintf("%s: %s %s [OPTIONS] %s", app.styled("Usage", ansiBold), app.name, path, argsLine)
 }
 
 // getCommandTryUsage gets printable help with try statement
@@ -578,11 +664,11 @@ func (app *implCliApplication) printCommandHelp(cmd CliCommand, stack []string) 
 			} else {
 				help = help + " [required]"
 			}
-			argLines = append(argLines, fmt.Sprintf("  %s\t%s", strings.ToUpper(argName), help))
+			argLines = append(argLines, fmt.Sprintf("  %s\t%s", app.styled(strings.ToUpper(argName), ansiGreen), help))
 		}
 	}
 	if len(argLines) > 0 {
-		fmt.Println("Arguments:")
+		Echo("%s:", app.styled("Arguments", ansiBold))
 		for _, line := range argLines {
 			fmt.Println(line)
 		}
@@ -600,7 +686,7 @@ func (app *implCliApplication) printCommandHelp(cmd CliCommand, stack []string) 
 		tagParts := parseCliTag(cliTag)
 		if optName, ok := tagParts["option"]; ok {
 			if !hasOptions {
-				fmt.Println("Options:")
+				Echo("%s:", app.styled("Options", ansiBold))
 				hasOptions = true
 			}
 
@@ -620,7 +706,7 @@ func (app *implCliApplication) printCommandHelp(cmd CliCommand, stack []string) 
 				envText = fmt.Sprintf(" [$%s]", envVar)
 			}
 
-			fmt.Printf("  --%s  %s%s%s\n", optName, help, defaultText, envText)
+			fmt.Printf("  %s  %s%s%s\n", app.styled("--"+optName, ansiYellow), help, defaultText, envText)
 		}
 	}
 }
@@ -663,27 +749,33 @@ func parseCliTag(tag string) map[string]string {
 	return result
 }
 
-// extractParentGroup extracts the parent group from a command or group
-func extractParentGroup(obj interface{}) string {
+// extractParentInfo extracts group, hidden, and alias metadata from the CliGroup parent field.
+func extractParentInfo(obj interface{}) parentInfo {
 	val := reflect.ValueOf(obj).Elem()
 	typ := val.Type()
 
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-
-		// Look for the 'CliGroupClass' field with cli tag
 		if field.Type == CliGroupClass {
 			cliTag := field.Tag.Get("cli")
 			if cliTag != "" {
 				tagParts := parseCliTag(cliTag)
-				if groupName, ok := tagParts["group"]; ok {
-					return groupName
+				_, isHidden := tagParts["hidden"]
+				return parentInfo{
+					group:  tagParts["group"],
+					hidden: isHidden,
+					alias:  tagParts["alias"],
 				}
 			}
 		}
 	}
 
-	return ""
+	return parentInfo{}
+}
+
+// extractParentGroup extracts the parent group name from a command or group.
+func extractParentGroup(obj interface{}) string {
+	return extractParentInfo(obj).group
 }
 
 // Run creates the application, sets up the glue DI container, discovers all
@@ -782,7 +874,13 @@ func Run(options ...Option) (err error) {
 func Main(options ...Option) {
 
 	if err := Run(options...); err != nil {
-		fmt.Printf("Error: %v\n", err)
+		// Detect color for error output without needing the app instance
+		errPrefix := "Error"
+		fi, statErr := os.Stderr.Stat()
+		if statErr == nil && fi.Mode()&os.ModeCharDevice != 0 && os.Getenv("NO_COLOR") == "" {
+			errPrefix = ansiRed + ansiBold + "Error" + ansiReset
+		}
+		fmt.Fprintf(os.Stderr, "%s: %v\n", errPrefix, err)
 		os.Exit(1)
 	}
 }

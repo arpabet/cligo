@@ -113,6 +113,28 @@ func (cmd *ShipNew) Run(ctx context.Context, c glue.Container) error  {
 
 The `Help()` method returns `(shortDescription, optionalLongDescription)`. The short description appears in command listings; the long description appears in the command's own `--help` output. If the long description is empty, the short description is used for both.
 
+### Hidden Commands
+
+Add `hidden` to the parent field tag to exclude a command or group from help output while keeping it executable:
+
+```go
+type Debug struct {
+    Parent cligo.CliGroup `cli:"group=cli,hidden"`
+}
+```
+
+### Aliases
+
+Add `alias=<name>` to the parent field tag to define an alternate name for a command or group:
+
+```go
+type ShipMove struct {
+    Parent cligo.CliGroup `cli:"group=ship,alias=mv"`
+}
+```
+
+Aliases work for both commands and groups. The alias is shown in help output as `move (mv)`.
+
 ### Arguments
 
 Positional arguments are declared with `cli:"argument=<name>"` struct tags. They are parsed in the order they appear in the struct. Arguments are required by default; add `default=<value>` to make them optional:
@@ -173,6 +195,8 @@ All metadata is declared in the `cli` struct tag with comma-separated `key=value
 | `default=<value>` | Default value for an option or argument | `cli:"argument=y,default=0.0"` |
 | `help=<text>` | Help text for an option | `cli:"option=speed,help=Speed in knots"` |
 | `env=<VAR>` | Environment variable fallback for an option | `cli:"option=port,env=APP_PORT"` |
+| `hidden` | Hide command/group from help output (still executable) | `cli:"group=cli,hidden"` |
+| `alias=<name>` | Alternate name for a command or group | `cli:"group=ship,alias=mv"` |
 
 Tags can be combined: `cli:"option=speed,short=-s,default=10,env=SPEED,help=Speed in knots"`
 
@@ -189,6 +213,7 @@ cligo.Main(
     cligo.Build("abc123"),        // Build identifier shown alongside version
     cligo.Verbose(true),          // Force verbose mode
     cligo.Context(ctx),           // Custom context (defaults to signal-aware context)
+    cligo.Color(true),            // Force colored output (auto-detected by default)
     cligo.Beans(beans...),        // Register groups and commands
     cligo.Properties(props),      // Glue properties for DI
 )
@@ -203,6 +228,7 @@ cligo.Main(
 | `Build(s)` | Build identifier shown with version |
 | `Verbose(b)` | Force verbose mode on |
 | `Context(ctx)` | Custom `context.Context` (defaults to signal-aware context) |
+| `Color(b)` | Force colored output on/off (auto-detected by default, respects `NO_COLOR`) |
 | `Beans(b...)` | Groups, commands, and other DI beans |
 | `Properties(p)` | Glue properties for dependency injection |
 | `Nope()` | No-op (useful for conditional options) |

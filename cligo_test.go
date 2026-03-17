@@ -1118,3 +1118,203 @@ func TestRun_CancelledContext_Propagated(t *testing.T) {
 		t.Error("expected context to be cancelled in command")
 	}
 }
+
+// ─── Hidden commands ─────────────────────────────────────────────────────────
+
+// hiddenCmd is a command that should not appear in help output.
+type hiddenCmd struct {
+	Parent CliGroup `cli:"group=cli,hidden"`
+	ran    bool
+}
+
+func (c *hiddenCmd) Command() string                               { return "secret" }
+func (c *hiddenCmd) Help() (string, string)                        { return "Secret command.", "" }
+func (c *hiddenCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+
+// hiddenGroupDef is a group hidden from help.
+type hiddenGroupDef struct {
+	Parent CliGroup `cli:"group=cli,hidden"`
+}
+
+func (g *hiddenGroupDef) Group() string          { return "internal" }
+func (g *hiddenGroupDef) Help() (string, string) { return "Internal group.", "" }
+
+func TestRun_HiddenCommand_NotInHelp(t *testing.T) {
+	withArgs([]string{"app", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run(Beans(&hiddenCmd{}))
+		})
+		if strings.Contains(out, "secret") {
+			t.Errorf("hidden command should not appear in help, got: %q", out)
+		}
+	})
+}
+
+func TestRun_HiddenCommand_StillExecutable(t *testing.T) {
+	cmd := &hiddenCmd{}
+	withArgs([]string{"app", "secret"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Error("hidden command should still be executable")
+	}
+}
+
+func TestRun_HiddenGroup_NotInHelp(t *testing.T) {
+	withArgs([]string{"app", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run(Beans(&hiddenGroupDef{}))
+		})
+		if strings.Contains(out, "internal") {
+			t.Errorf("hidden group should not appear in help, got: %q", out)
+		}
+	})
+}
+
+// ─── Command aliases ─────────────────────────────────────────────────────────
+
+// aliasedCmd has an alias "n" for "new".
+type aliasedCmd struct {
+	Parent CliGroup `cli:"group=ship,alias=n"`
+	Name   string   `cli:"argument=name"`
+	ran    bool
+}
+
+func (c *aliasedCmd) Command() string                               { return "new" }
+func (c *aliasedCmd) Help() (string, string)                        { return "Create a ship.", "" }
+func (c *aliasedCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+
+// aliasedGroup has an alias "s" for "ship".
+type aliasedGroup struct {
+	Parent CliGroup `cli:"group=cli,alias=s"`
+}
+
+func (g *aliasedGroup) Group() string          { return "ship" }
+func (g *aliasedGroup) Help() (string, string) { return "Manage ships.", "" }
+
+func TestRun_CommandAlias_Executes(t *testing.T) {
+	cmd := &aliasedCmd{}
+	withArgs([]string{"app", "ship", "n", "titanic"}, func() {
+		if err := Run(Beans(&aliasedGroup{}, cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Error("command should execute via alias")
+	}
+	if cmd.Name != "titanic" {
+		t.Errorf("expected Name=titanic, got %q", cmd.Name)
+	}
+}
+
+func TestRun_CommandAlias_PrimaryNameStillWorks(t *testing.T) {
+	cmd := &aliasedCmd{}
+	withArgs([]string{"app", "ship", "new", "titanic"}, func() {
+		if err := Run(Beans(&aliasedGroup{}, cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Error("command should execute via primary name")
+	}
+}
+
+func TestRun_GroupAlias_Executes(t *testing.T) {
+	cmd := &aliasedCmd{}
+	withArgs([]string{"app", "s", "new", "titanic"}, func() {
+		if err := Run(Beans(&aliasedGroup{}, cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Error("command should execute via group alias")
+	}
+}
+
+func TestRun_Alias_ShownInHelp(t *testing.T) {
+	withArgs([]string{"app", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run(Beans(&aliasedGroup{}, &aliasedCmd{}))
+		})
+		if !strings.Contains(out, "(s)") {
+			t.Errorf("expected alias (s) in help output, got: %q", out)
+		}
+	})
+}
+
+func TestRun_CommandAlias_ShownInGroupHelp(t *testing.T) {
+	withArgs([]string{"app", "ship", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run(Beans(&aliasedGroup{}, &aliasedCmd{}))
+		})
+		if !strings.Contains(out, "(n)") {
+			t.Errorf("expected alias (n) in group help output, got: %q", out)
+		}
+	})
+}
+
+// ─── Colored output ──────────────────────────────────────────────────────────
+
+func TestRun_ColorForced_ContainsAnsiCodes(t *testing.T) {
+	withArgs([]string{"app", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run(Color(true), Beans(&shipGroup{}, &newShipCmd{}))
+		})
+		if !strings.Contains(out, "\033[") {
+			t.Errorf("expected ANSI escape codes with Color(true), got: %q", out)
+		}
+	})
+}
+
+func TestRun_ColorDisabled_NoAnsiCodes(t *testing.T) {
+	withArgs([]string{"app", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run(Color(false), Beans(&shipGroup{}, &newShipCmd{}))
+		})
+		if strings.Contains(out, "\033[") {
+			t.Errorf("expected no ANSI codes with Color(false), got: %q", out)
+		}
+	})
+}
+
+func TestRun_ColorForced_CommandHelp_HasAnsiCodes(t *testing.T) {
+	withArgs([]string{"app", "ship", "move", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run(Color(true), Beans(&shipGroup{}, &moveShipCmd{}))
+		})
+		if !strings.Contains(out, "\033[") {
+			t.Errorf("expected ANSI codes in command help with Color(true), got: %q", out)
+		}
+	})
+}
+
+// ─── extractParentInfo ───────────────────────────────────────────────────────
+
+func TestExtractParentInfo_Hidden(t *testing.T) {
+	info := extractParentInfo(&hiddenCmd{})
+	if !info.hidden {
+		t.Error("expected hidden=true")
+	}
+	if info.group != "cli" {
+		t.Errorf("expected group=cli, got %q", info.group)
+	}
+}
+
+func TestExtractParentInfo_Alias(t *testing.T) {
+	info := extractParentInfo(&aliasedCmd{})
+	if info.alias != "n" {
+		t.Errorf("expected alias=n, got %q", info.alias)
+	}
+}
+
+func TestExtractParentInfo_Plain(t *testing.T) {
+	info := extractParentInfo(&newShipCmd{})
+	if info.hidden {
+		t.Error("expected hidden=false")
+	}
+	if info.alias != "" {
+		t.Errorf("expected empty alias, got %q", info.alias)
+	}
+}

@@ -24,9 +24,9 @@
 ## Phase 3: Polish & Ecosystem
 
 - [ ] **3.1** Shell completion generation — generate bash/zsh/fish completion scripts from the command tree.
-- [ ] **3.2** Hidden commands — `cli:"hidden"` tag to exclude from help but still executable.
-- [ ] **3.3** Command aliases — `cli:"alias=mv"` for alternate names.
-- [ ] **3.4** Colored/formatted output — optional ANSI color support for help and errors.
+- [x] **3.2** Hidden commands — `cli:"hidden"` tag to exclude from help but still executable.
+- [x] **3.3** Command aliases — `cli:"alias=mv"` for alternate names.
+- [x] **3.4** Colored/formatted output — optional ANSI color support for help and errors.
 - [ ] **3.5** Man page generation — generate man pages from command definitions.
 - [ ] **3.6** Testing helpers — `cligo.TestRun(args []string, beans ...interface{}) error` for integration testing without `os.Args`.
 - [ ] **3.7** Config file support — integrate with glue properties to load from YAML/TOML/env files automatically.
