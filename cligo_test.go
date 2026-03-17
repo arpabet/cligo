@@ -497,7 +497,7 @@ func TestRun_VersionLongFlag(t *testing.T) {
 }
 
 func TestRun_VersionShortFlag(t *testing.T) {
-	withArgs([]string{"app", "-V"}, func() {
+	withArgs([]string{"app", "-v"}, func() {
 		out := captureOutput(func() {
 			if err := Run(Version("2.5"), Beans(&shipGroup{})); err != nil {
 				t.Errorf("unexpected error: %v", err)
@@ -1478,4 +1478,242 @@ func TestConfigFile_UnsupportedExtension_ReturnsError(t *testing.T) {
 			}
 		})
 	})
+}
+
+// ─── profile tests ───────────────────────────────────────────────────────────
+
+// profileCmd is only registered when the "dev" profile is active via glue.IfProfile.
+type profileCmd struct {
+	Parent CliGroup `cli:"group=cli"`
+	ran    bool
+}
+
+func (c *profileCmd) Command() string                               { return "profcmd" }
+func (c *profileCmd) Help() (string, string)                        { return "Profile command.", "" }
+func (c *profileCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+
+func TestProfile_CLIFlag_ActivatesProfile(t *testing.T) {
+	cmd := &profileCmd{}
+	withArgs([]string{"app", "--profile", "dev", "profcmd"}, func() {
+		if err := Run(Beans(glue.IfProfile("dev", cmd))); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Fatal("expected profcmd to run when dev profile is active")
+	}
+}
+
+func TestProfile_CLIFlag_InactiveProfile_CommandNotRegistered(t *testing.T) {
+	cmd := &profileCmd{}
+	withArgs([]string{"app", "--profile", "staging", "profcmd"}, func() {
+		captureOutput(func() {
+			err := Run(Beans(glue.IfProfile("dev", cmd)))
+			if err == nil {
+				t.Fatal("expected error for unregistered command")
+			}
+			if !strings.Contains(err.Error(), "unknown command") {
+				t.Errorf("expected 'unknown command' error, got: %v", err)
+			}
+		})
+	})
+	if cmd.ran {
+		t.Fatal("profcmd should not run when dev profile is not active")
+	}
+}
+
+func TestProfile_CLIFlag_CommaSeparated(t *testing.T) {
+	devCmd := &profileCmd{}
+	withArgs([]string{"app", "--profile", "dev,staging", "profcmd"}, func() {
+		if err := Run(Beans(glue.IfProfile("staging", devCmd))); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !devCmd.ran {
+		t.Fatal("expected profcmd to run with staging profile from comma-separated list")
+	}
+}
+
+func TestProfile_CLIFlag_EqualsForm(t *testing.T) {
+	cmd := &profileCmd{}
+	withArgs([]string{"app", "--profile=dev", "profcmd"}, func() {
+		if err := Run(Beans(glue.IfProfile("dev", cmd))); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Fatal("expected profcmd to run with --profile=dev")
+	}
+}
+
+func TestProfile_Option_Programmatic(t *testing.T) {
+	cmd := &profileCmd{}
+	withArgs([]string{"app", "profcmd"}, func() {
+		if err := Run(Profile("dev"), Beans(glue.IfProfile("dev", cmd))); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Fatal("expected profcmd to run with programmatic Profiles(\"dev\")")
+	}
+}
+
+func TestProfile_MergesCLIAndProgrammatic(t *testing.T) {
+	// Use a command gated on "dev&staging" — requires both profiles active.
+	cmd := &profileCmd{}
+	withArgs([]string{"app", "--profile", "staging", "profcmd"}, func() {
+		if err := Run(Profile("dev"), Beans(glue.IfProfile("dev&staging", cmd))); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Fatal("expected profcmd to run when both dev (programmatic) and staging (CLI) profiles are active")
+	}
+}
+
+func TestProfile_ShowsInHelp(t *testing.T) {
+	withArgs([]string{"app", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run()
+		})
+		if !strings.Contains(out, "--profile") {
+			t.Errorf("expected --profile in help output, got:\n%s", out)
+		}
+	})
+}
+
+func TestProfile_NoProfile_SkipsProfileBeans(t *testing.T) {
+	cmd := &profileCmd{}
+	withArgs([]string{"app", "profcmd"}, func() {
+		captureOutput(func() {
+			err := Run(Beans(glue.IfProfile("dev", cmd)))
+			if err == nil {
+				t.Fatal("expected error when no profile is active and command is profile-gated")
+			}
+		})
+	})
+	if cmd.ran {
+		t.Fatal("profcmd should not run without any active profile")
+	}
+}
+
+func TestProfile_CLIFlag_Repeated(t *testing.T) {
+	cmd := &profileCmd{}
+	withArgs([]string{"app", "--profile", "dev", "--profile", "staging", "profcmd"}, func() {
+		if err := Run(Beans(glue.IfProfile("dev&staging", cmd))); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Fatal("expected profcmd to run with repeated --profile flags")
+	}
+}
+
+// ─── config flag tests ───────────────────────────────────────────────────────
+
+func TestConfigFlag_CLIFlag(t *testing.T) {
+	path := writeTempFile(t, "config.properties", "app.profile=fromflag\napp.port=1234")
+	cmd := &propCmd{}
+	withArgs([]string{"app", "--config", path, "propcmd"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "fromflag" {
+		t.Errorf("expected Profile=fromflag, got %q", cmd.Profile)
+	}
+	if cmd.Port != "1234" {
+		t.Errorf("expected Port=1234, got %q", cmd.Port)
+	}
+}
+
+func TestConfigFlag_CLIFlag_EqualsForm(t *testing.T) {
+	path := writeTempFile(t, "config.properties", "app.profile=eqform\napp.port=5678")
+	cmd := &propCmd{}
+	withArgs([]string{"app", "--config=" + path, "propcmd"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "eqform" {
+		t.Errorf("expected Profile=eqform, got %q", cmd.Profile)
+	}
+}
+
+func TestConfigFlag_Repeated(t *testing.T) {
+	// First file exists, second is nonexistent — first wins
+	path := writeTempFile(t, "first.properties", "app.profile=first\napp.port=1111")
+	cmd := &propCmd{}
+	withArgs([]string{"app", "--config", "/nonexistent/second.properties", "--config", path, "propcmd"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "first" {
+		t.Errorf("expected Profile=first, got %q", cmd.Profile)
+	}
+}
+
+func TestConfigFlag_MergesWithOption(t *testing.T) {
+	// ConfigFile option provides one path, --config provides another — both are candidates
+	path := writeTempFile(t, "flag.properties", "app.profile=flagval\napp.port=9999")
+	cmd := &propCmd{}
+	withArgs([]string{"app", "--config", path, "propcmd"}, func() {
+		if err := Run(ConfigFile("/nonexistent/option.properties"), Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "flagval" {
+		t.Errorf("expected Profile=flagval, got %q", cmd.Profile)
+	}
+}
+
+func TestConfigFlag_ShowsInHelp(t *testing.T) {
+	withArgs([]string{"app", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run()
+		})
+		if !strings.Contains(out, "--config") {
+			t.Errorf("expected --config in help output, got:\n%s", out)
+		}
+	})
+}
+
+// ─── short flag tests ────────────────────────────────────────────────────────
+
+func TestProfile_ShortFlag(t *testing.T) {
+	cmd := &profileCmd{}
+	withArgs([]string{"app", "-p", "dev", "profcmd"}, func() {
+		if err := Run(Beans(glue.IfProfile("dev", cmd))); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Fatal("expected profcmd to run with -p dev")
+	}
+}
+
+func TestProfile_ShortFlag_Repeated(t *testing.T) {
+	cmd := &profileCmd{}
+	withArgs([]string{"app", "-p", "dev", "-p", "staging", "profcmd"}, func() {
+		if err := Run(Beans(glue.IfProfile("dev&staging", cmd))); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Fatal("expected profcmd to run with repeated -p flags")
+	}
+}
+
+func TestConfigFlag_ShortFlag(t *testing.T) {
+	path := writeTempFile(t, "config.properties", "app.profile=short\napp.port=4321")
+	cmd := &propCmd{}
+	withArgs([]string{"app", "-c", path, "propcmd"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "short" {
+		t.Errorf("expected Profile=short, got %q", cmd.Profile)
+	}
 }

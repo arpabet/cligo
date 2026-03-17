@@ -209,7 +209,7 @@ cligo.Main(
     cligo.Name("myapp"),          // Binary name (defaults to os.Args[0])
     cligo.Title("My Application"),// Display title shown in --version
     cligo.Help("Description."),   // Help text shown in usage
-    cligo.Version("1.0.0"),       // Enables --version / -V flag
+    cligo.Version("1.0.0"),       // Enables --version / -v flag
     cligo.Build("abc123"),        // Build identifier shown alongside version
     cligo.Verbose(true),          // Force verbose mode
     cligo.Context(ctx),           // Custom context (defaults to signal-aware context)
@@ -224,12 +224,13 @@ cligo.Main(
 | `Name(s)` | Application name (defaults to binary name) |
 | `Title(s)` | Display title for version output |
 | `Help(s)` | Description shown in help output |
-| `Version(s)` | Version string; enables `--version` / `-V` |
+| `Version(s)` | Version string; enables `--version` / `-v` |
 | `Build(s)` | Build identifier shown with version |
 | `Verbose(b)` | Force verbose mode on |
 | `Context(ctx)` | Custom `context.Context` (defaults to signal-aware context) |
 | `Color(b)` | Force colored output on/off (auto-detected by default, respects `NO_COLOR`) |
-| `ConfigFile(path)` | Load config from first existing file (`.properties`, `.yaml`, `.json`, `.toml`) |
+| `ConfigFile(path)` | Load config file (repeatable, merged with `--config` flag) |
+| `Profile(p)` | Activate glue profile (repeatable, merged with `--profile` flag) |
 | `Beans(b...)` | Groups, commands, and other DI beans |
 | `Properties(p)` | Glue properties for dependency injection |
 | `Nope()` | No-op (useful for conditional options) |
@@ -241,7 +242,9 @@ These flags are handled automatically:
 | Flag | Description |
 |------|-------------|
 | `--help`, `-h` | Show help for the application, group, or command |
-| `--version`, `-V` | Show version and build info (requires `Version()` option) |
+| `--version`, `-v` | Show version and build info (requires `Version()` option) |
+| `--profile`, `-p` | Activate glue profiles (comma-separated, repeatable) |
+| `--config`, `-c` | Load config file (repeatable, merged with `ConfigFile()` option) |
 | `--verbose` | Enable verbose logging via glue |
 
 ## Context & Signal Handling
@@ -326,9 +329,49 @@ func main() {
 }
 ```
 
+### Profiles
+
+Cligo integrates with glue's profile system for environment-aware bean registration and configuration. Profiles can be activated via the `--profile` CLI flag, the `Profiles()` option, or the `glue.profiles.active` property.
+
+```bash
+# Single profile
+myapp --profile dev serve
+
+# Multiple profiles (comma-separated or repeated)
+myapp --profile dev,local serve
+myapp --profile dev --profile local serve
+
+# Equals form
+myapp --profile=staging serve
+```
+
+Programmatic activation with `Profile()` is merged with CLI flag values:
+
+```go
+cligo.Main(
+    cligo.Profile("base"),
+    cligo.Beans(
+        glue.IfProfile("dev", &devDB{}),
+        glue.IfProfile("prod", &prodDB{}),
+        glue.IfProfile("dev|staging", &debugEndpoint{}),
+        glue.IfProfile("!prod", &mockMetrics{}),
+        &ServeCmd{},
+    ),
+)
+```
+
+Profile expressions supported by glue:
+
+| Expression | Meaning |
+|------------|---------|
+| `"dev"` | Active when `dev` profile is active |
+| `"!prod"` | Active when `prod` is NOT active |
+| `"dev\|staging"` | Active when either `dev` OR `staging` is active |
+| `"dev&local"` | Active when both `dev` AND `local` are active |
+
 ### Config Files
 
-Use `ConfigFile()` to load configuration from files into glue properties. Call it multiple times to specify fallback paths — the first existing file is loaded via `glue.PropertySource`. Format is detected by extension.
+Use `ConfigFile()` to specify fallback config file paths — the first existing file is loaded via `glue.PropertySource`. Format is detected by extension. Config files can also be specified from the command line with `--config`:
 
 ```go
 cligo.Main(
@@ -339,6 +382,12 @@ cligo.Main(
 )
 ```
 
+```bash
+# Override config from CLI (repeatable, merged with ConfigFile options)
+myapp --config /etc/myapp/config.yaml serve
+myapp --config base.properties --config override.properties serve
+```
+
 Supported formats:
 
 | Extension | Format | Example |
@@ -347,6 +396,15 @@ Supported formats:
 | `.yaml`, `.yml` | YAML (nested keys flattened with dots) | `app:\n  profile: dev` |
 | `.json` | JSON (nested keys flattened with dots) | `{"app": {"profile": "dev"}}` |
 | `.toml` | TOML | `[app]\nprofile = "dev"` |
+
+For `.env` files, register `glue.DotEnvPropertyResolver{}` as a bean:
+
+```go
+cligo.Main(
+    cligo.ConfigFile(".env"),
+    cligo.Beans(&glue.DotEnvPropertyResolver{}, &AddUser{}),
+)
+```
 
 YAML and JSON nested structures are flattened with dot notation:
 

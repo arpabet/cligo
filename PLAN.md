@@ -30,7 +30,8 @@
 - [ ] **3.5** Man page generation — generate man pages from command definitions.
 - [ ] **3.6** Testing helpers — `cligo.TestRun(args []string, beans ...interface{}) error` for integration testing without `os.Args`.
 - [x] **3.7** Config file support — integrate with glue properties to load from YAML/TOML/env files automatically.
-- [ ] **3.8** Plugin system — allow loading commands from external binaries or Go plugins.
+- [x] **3.8** Profile support — `--profile` flag and `Profiles()` option to activate glue profiles for environment-aware bean registration.
+- [ ] **3.9** Plugin system — allow loading commands from external binaries or Go plugins.
 
 ## Phase 4: Developer Experience
 

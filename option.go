@@ -54,7 +54,7 @@ func Help(help string) Option {
 	})
 }
 
-// Version sets the version string and enables the --version / -V flag.
+// Version sets the version string and enables the --version / -v flag.
 func Version(version string) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.version = version
@@ -97,13 +97,22 @@ func Context(ctx context.Context) Option {
 	})
 }
 
-// ConfigFile specifies config file paths to try loading into glue.Properties.
-// Supported formats (by extension): .env, .properties, .yaml, .yml, .json.
-// Config values feed into glue.Properties and are available via value:"key" struct tags.
+// ConfigFile specifies a config file path to try loading into glue.Properties.
+// Call multiple times to specify fallback paths — the first existing file is loaded.
+// Supported formats (by extension): .properties, .yaml, .yml, .json, .toml.
+// These are merged with any --config CLI flag values.
 // Priority: flags > env vars > config file > defaults.
 func ConfigFile(path string) Option {
 	return optionFunc(func(a *implCliApplication) {
 		a.configFiles = append(a.configFiles, path)
+	})
+}
+
+// Profile sets active glue profiles programmatically.
+// These are merged with any --profile CLI flag values.
+func Profile(profile string) Option {
+	return optionFunc(func(a *implCliApplication) {
+		a.profiles = append(a.profiles, profile)
 	})
 }
 

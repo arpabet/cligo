@@ -36,6 +36,7 @@ type implCliApplication struct {
 	verbose      bool
 	color        *bool
 	configFiles  []string
+	profiles     []string
 	ctx          context.Context
 	beans        []interface{}
 	properties   glue.Properties
@@ -96,6 +97,16 @@ func New(options ...Option) CliApplication {
 		app.verbose = hasVerbose(os.Args[1:])
 	}
 
+	// Merge CLI --profile/-p flag values with programmatic profiles
+	if cliProfiles := parseGlobalFlag(os.Args[1:], "profile", "p"); len(cliProfiles) > 0 {
+		app.profiles = append(app.profiles, cliProfiles...)
+	}
+
+	// Merge CLI --config/-c flag values with programmatic config files
+	if cliConfigs := parseGlobalFlag(os.Args[1:], "config", "c"); len(cliConfigs) > 0 {
+		app.configFiles = append(app.configFiles, cliConfigs...)
+	}
+
 	return app
 }
 
@@ -139,6 +150,10 @@ func (app *implCliApplication) getConfigFiles() []string {
 	return app.configFiles
 }
 
+func (app *implCliApplication) getProfiles() []string {
+	return app.profiles
+}
+
 func hasVerbose(args []string) bool {
 	for _, arg := range args {
 		if arg == "--verbose" {
@@ -146,6 +161,33 @@ func hasVerbose(args []string) bool {
 		}
 	}
 	return false
+}
+
+// parseGlobalFlag extracts all values for a given --flag/-short from args.
+// Supports --flag value, --flag=value, -s value, -s=value, and repeated usage.
+func parseGlobalFlag(args []string, flag string, short string) []string {
+	longPrefix := "--" + flag
+	shortPrefix := "-" + short
+	var values []string
+	for i, arg := range args {
+		var value string
+		if (arg == longPrefix || arg == shortPrefix) && i+1 < len(args) {
+			value = args[i+1]
+		} else if strings.HasPrefix(arg, longPrefix+"=") {
+			value = strings.TrimPrefix(arg, longPrefix+"=")
+		} else if strings.HasPrefix(arg, shortPrefix+"=") {
+			value = strings.TrimPrefix(arg, shortPrefix+"=")
+		}
+		if value != "" {
+			for _, v := range strings.Split(value, ",") {
+				v = strings.TrimSpace(v)
+				if v != "" {
+					values = append(values, v)
+				}
+			}
+		}
+	}
+	return values
 }
 
 // Echo prints a formatted line to stdout. With an empty format string, it prints a blank line.
@@ -237,7 +279,7 @@ func (app *implCliApplication) Execute(ctx context.Context, c glue.Container) er
 
 	// Check for version flag
 	if app.version != "" {
-		if os.Args[1] == "--version" || os.Args[1] == "-V" {
+		if os.Args[1] == "--version" || os.Args[1] == "-v" {
 			name := app.name
 			if app.title != "" {
 				name = app.title
@@ -303,6 +345,20 @@ func (app *implCliApplication) parseAndExecute(ctx context.Context, c glue.Conta
 		app.verbose = true
 		app.printHelp(currentGroup, stack)
 		return nil
+	}
+
+	if args[0] == "--profile" || args[0] == "-p" || strings.HasPrefix(args[0], "--profile=") || strings.HasPrefix(args[0], "-p=") ||
+		args[0] == "--config" || args[0] == "-c" || strings.HasPrefix(args[0], "--config=") || strings.HasPrefix(args[0], "-c=") {
+		// Skip --profile/--config (and short forms) and its value, then continue parsing
+		skip := 1
+		if (args[0] == "--profile" || args[0] == "-p" || args[0] == "--config" || args[0] == "-c") && len(args) > 1 {
+			skip = 2
+		}
+		if skip >= len(args) {
+			app.printHelp(currentGroup, stack)
+			return nil
+		}
+		return app.parseAndExecute(ctx, c, currentGroup, args[skip:], stack)
 	}
 
 	app.printHelp(currentGroup, stack)
@@ -555,10 +611,12 @@ func (app *implCliApplication) printHelp(groupName string, stack []string) {
 	if groupName == RootGroup {
 		Echo("%s:", app.styled("Options", ansiBold))
 		if app.version != "" {
-			Echo("  %s  Show the version and exit.", app.styled("--version", ansiYellow))
+			Echo("  %s  Show the version and exit.", app.styled("-v, --version", ansiYellow))
 		}
-		Echo("  %s  Show extended logging information.", app.styled("--verbose", ansiYellow))
-		Echo("  %s     Show this message and exit.", app.styled("--help", ansiYellow))
+		Echo("  %s  Activate glue profiles (comma-separated).", app.styled("-p, --profile", ansiYellow))
+		Echo("  %s   Load config file (repeatable).", app.styled("-c, --config", ansiYellow))
+		Echo("  %s      Show extended logging information.", app.styled("--verbose", ansiYellow))
+		Echo("  %s   Show this message and exit.", app.styled("-h, --help", ansiYellow))
 		Echo("")
 	}
 
@@ -826,6 +884,10 @@ func Run(options ...Option) (err error) {
 	}
 
 	glueOpts := []glue.ContainerOption{glue.WithContext(ctx)}
+
+	if profiles := app.getProfiles(); len(profiles) > 0 {
+		glueOpts = append(glueOpts, glue.WithProfiles(profiles...))
+	}
 
 	if hasVerbose(os.Args[1:]) {
 		glueOpts = append(glueOpts, glue.WithLogger(log.Default()))

@@ -62,6 +62,9 @@ type CliApplication interface {
 	// Non-public method
 	getConfigFiles() []string
 
+	// Non-public method to keep optional profiles private
+	getProfiles() []string
+
 	// RegisterGroup register the cli group in the context
 	RegisterGroup(group CliGroup) error
 
