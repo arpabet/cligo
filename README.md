@@ -547,7 +547,7 @@ go run ./examples/props users add alice
 
 ## License
 
-Copyright (c) 2025 Karagatan LLC. Licensed under BUSL-1.1.
+Copyright (c) 2026 Karagatan LLC. Licensed under BUSL-1.1.
 
 ## Contributions
 
