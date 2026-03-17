@@ -66,9 +66,9 @@ func (t *implCliApplication) executeCommand(ctx context.Context, c glue.Containe
 			return fmt.Errorf("fail to initialize '%s' command scope context, %v", cmd.Command(), err)
 		}
 		defer child.Close()
-		return cmd.Run(ctx, child)
+		return cmd.Run(ctx)
 	}
 
-	// Execute the uknown command in the application context
-	return cmd.Run(ctx, c)
+	// Execute the command in the application context
+	return cmd.Run(ctx)
 }

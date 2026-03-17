@@ -13,8 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"go.arpabet.com/glue"
 )
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -81,7 +79,7 @@ type newShipCmd struct {
 
 func (c *newShipCmd) Command() string                               { return "new" }
 func (c *newShipCmd) Help() (string, string)                        { return "Create a ship.", "" }
-func (c *newShipCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *newShipCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // setSpeedCmd has a single int positional argument.
 type setSpeedCmd struct {
@@ -92,7 +90,7 @@ type setSpeedCmd struct {
 
 func (c *setSpeedCmd) Command() string                               { return "setspeed" }
 func (c *setSpeedCmd) Help() (string, string)                        { return "Set speed.", "" }
-func (c *setSpeedCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *setSpeedCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // moveShipCmd has float positional args and several typed options including a short flag.
 type moveShipCmd struct {
@@ -108,7 +106,7 @@ type moveShipCmd struct {
 
 func (c *moveShipCmd) Command() string                               { return "move" }
 func (c *moveShipCmd) Help() (string, string)                        { return "Move a ship.", "" }
-func (c *moveShipCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *moveShipCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // failCmd always returns an error from Run.
 type failCmd struct {
@@ -117,7 +115,7 @@ type failCmd struct {
 
 func (c *failCmd) Command() string        { return "fail" }
 func (c *failCmd) Help() (string, string) { return "Always fails.", "" }
-func (c *failCmd) Run(_ context.Context, _ glue.Container) error {
+func (c *failCmd) Run(_ context.Context) error {
 	return fmt.Errorf("intentional failure")
 }
 
@@ -128,7 +126,7 @@ type panicErrCmd struct {
 
 func (c *panicErrCmd) Command() string        { return "panicerr" }
 func (c *panicErrCmd) Help() (string, string) { return "Panics with error.", "" }
-func (c *panicErrCmd) Run(_ context.Context, _ glue.Container) error {
+func (c *panicErrCmd) Run(_ context.Context) error {
 	panic(fmt.Errorf("panic error"))
 }
 
@@ -139,7 +137,7 @@ type panicStrCmd struct {
 
 func (c *panicStrCmd) Command() string                               { return "panicstr" }
 func (c *panicStrCmd) Help() (string, string)                        { return "Panics with string.", "" }
-func (c *panicStrCmd) Run(_ context.Context, _ glue.Container) error { panic("string panic") }
+func (c *panicStrCmd) Run(_ context.Context) error { panic("string panic") }
 
 // panicOtherCmd panics with a non-error, non-string value.
 type panicOtherCmd struct {
@@ -148,7 +146,7 @@ type panicOtherCmd struct {
 
 func (c *panicOtherCmd) Command() string                               { return "panicother" }
 func (c *panicOtherCmd) Help() (string, string)                        { return "Panics with int.", "" }
-func (c *panicOtherCmd) Run(_ context.Context, _ glue.Container) error { panic(42) }
+func (c *panicOtherCmd) Run(_ context.Context) error { panic(42) }
 
 // scopeBean is a DI bean provided by beanCmd's command scope.
 type scopeBean struct{ Value string }
@@ -162,7 +160,7 @@ type beanCmd struct {
 func (c *beanCmd) Command() string                               { return "wbeans" }
 func (c *beanCmd) Help() (string, string)                        { return "Command with beans.", "" }
 func (c *beanCmd) CommandBeans() []interface{}                   { return []interface{}{&scopeBean{Value: "injected"}} }
-func (c *beanCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *beanCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // orphanGroup has no CliGroup field, so extractParentGroup returns "".
 type orphanGroup struct{}
@@ -175,14 +173,14 @@ type orphanCmd struct{}
 
 func (c *orphanCmd) Command() string                               { return "orphan" }
 func (c *orphanCmd) Help() (string, string)                        { return "Orphan command.", "" }
-func (c *orphanCmd) Run(_ context.Context, _ glue.Container) error { return nil }
+func (c *orphanCmd) Run(_ context.Context) error { return nil }
 
 // orphanBeanCmd implements CliCommandWithBeans but has no CliGroup parent field.
 type orphanBeanCmd struct{}
 
 func (c *orphanBeanCmd) Command() string                               { return "orphanbean" }
 func (c *orphanBeanCmd) Help() (string, string)                        { return "Orphan bean command.", "" }
-func (c *orphanBeanCmd) Run(_ context.Context, _ glue.Container) error { return nil }
+func (c *orphanBeanCmd) Run(_ context.Context) error { return nil }
 func (c *orphanBeanCmd) CommandBeans() []interface{}                   { return nil }
 
 // ctxCheckCmd captures the context it receives so tests can inspect it.
@@ -194,7 +192,7 @@ type ctxCheckCmd struct {
 
 func (c *ctxCheckCmd) Command() string        { return "ctxcheck" }
 func (c *ctxCheckCmd) Help() (string, string) { return "Check context.", "" }
-func (c *ctxCheckCmd) Run(ctx context.Context, _ glue.Container) error {
+func (c *ctxCheckCmd) Run(ctx context.Context) error {
 	c.gotCtx = ctx
 	c.ran = true
 	return ctx.Err()
@@ -210,7 +208,7 @@ type optArgCmd struct {
 
 func (c *optArgCmd) Command() string                               { return "optarg" }
 func (c *optArgCmd) Help() (string, string)                        { return "Optional arg test.", "" }
-func (c *optArgCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *optArgCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // reqArgCmd has an explicitly required arg.
 type reqArgCmd struct {
@@ -221,7 +219,7 @@ type reqArgCmd struct {
 
 func (c *reqArgCmd) Command() string                               { return "reqarg" }
 func (c *reqArgCmd) Help() (string, string)                        { return "Required arg test.", "" }
-func (c *reqArgCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *reqArgCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // optIntArgCmd has an optional int arg with default.
 type optIntArgCmd struct {
@@ -232,7 +230,7 @@ type optIntArgCmd struct {
 
 func (c *optIntArgCmd) Command() string                               { return "optint" }
 func (c *optIntArgCmd) Help() (string, string)                        { return "Optional int arg.", "" }
-func (c *optIntArgCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *optIntArgCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // envCmd has an option with env var binding.
 type envCmd struct {
@@ -244,7 +242,7 @@ type envCmd struct {
 
 func (c *envCmd) Command() string                               { return "envcmd" }
 func (c *envCmd) Help() (string, string)                        { return "Env var test.", "" }
-func (c *envCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *envCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // hiddenCmd is a command that should not appear in help output.
 type hiddenCmd struct {
@@ -254,7 +252,7 @@ type hiddenCmd struct {
 
 func (c *hiddenCmd) Command() string                               { return "secret" }
 func (c *hiddenCmd) Help() (string, string)                        { return "Secret command.", "" }
-func (c *hiddenCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *hiddenCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // hiddenGroupDef is a group hidden from help.
 type hiddenGroupDef struct {
@@ -273,7 +271,7 @@ type aliasedCmd struct {
 
 func (c *aliasedCmd) Command() string                               { return "new" }
 func (c *aliasedCmd) Help() (string, string)                        { return "Create a ship.", "" }
-func (c *aliasedCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *aliasedCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // aliasedGroup has an alias "s" for "ship".
 type aliasedGroup struct {
@@ -293,7 +291,7 @@ type propCmd struct {
 
 func (c *propCmd) Command() string                               { return "propcmd" }
 func (c *propCmd) Help() (string, string)                        { return "Prop command.", "" }
-func (c *propCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *propCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // profileCmd is only registered when a profile is active via glue.IfProfile.
 type profileCmd struct {
@@ -303,7 +301,7 @@ type profileCmd struct {
 
 func (c *profileCmd) Command() string                               { return "profcmd" }
 func (c *profileCmd) Help() (string, string)                        { return "Profile command.", "" }
-func (c *profileCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *profileCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // sliceCmd has slice-typed options.
 type sliceCmd struct {
@@ -317,7 +315,7 @@ type sliceCmd struct {
 
 func (c *sliceCmd) Command() string                               { return "slicecmd" }
 func (c *sliceCmd) Help() (string, string)                        { return "Slice command.", "" }
-func (c *sliceCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *sliceCmd) Run(_ context.Context) error { c.ran = true; return nil }
 
 // sliceEnvCmd has slice options with env var binding.
 type sliceEnvCmd struct {
@@ -329,4 +327,4 @@ type sliceEnvCmd struct {
 
 func (c *sliceEnvCmd) Command() string                               { return "sliceenvcmd" }
 func (c *sliceEnvCmd) Help() (string, string)                        { return "Slice env command.", "" }
-func (c *sliceEnvCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+func (c *sliceEnvCmd) Run(_ context.Context) error { c.ran = true; return nil }

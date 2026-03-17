@@ -60,7 +60,6 @@ import (
     "context"
 
     "go.arpabet.com/cligo"
-    "go.arpabet.com/glue"
 )
 
 type Greet struct {
@@ -70,7 +69,7 @@ type Greet struct {
 
 func (cmd *Greet) Command() string                                  { return "greet" }
 func (cmd *Greet) Help() (string, string)                           { return "Greet someone.", "" }
-func (cmd *Greet) Run(ctx context.Context, c glue.Container) error  {
+func (cmd *Greet) Run(ctx context.Context) error  {
     cligo.Echo("Hello, %s!", cmd.Name)
     return nil
 }
@@ -146,7 +145,7 @@ type ShipNew struct {
 
 func (cmd *ShipNew) Command() string                                  { return "new" }
 func (cmd *ShipNew) Help() (string, string)                           { return "Create a new ship.", "" }
-func (cmd *ShipNew) Run(ctx context.Context, c glue.Container) error  {
+func (cmd *ShipNew) Run(ctx context.Context) error  {
     cligo.Echo("Created ship %s", cmd.Name)
     return nil
 }
@@ -316,7 +315,7 @@ These flags are handled automatically:
 Every command receives a `context.Context` as the first argument to `Run()`. By default, cligo creates a signal-aware context that is cancelled on `SIGINT` or `SIGTERM`, enabling graceful shutdown:
 
 ```go
-func (cmd *Serve) Run(ctx context.Context, c glue.Container) error {
+func (cmd *Serve) Run(ctx context.Context) error {
     server := &http.Server{Addr: ":8080"}
     go func() {
         <-ctx.Done() // cancelled on Ctrl+C
@@ -342,7 +341,7 @@ If no `Context()` option is provided, cligo creates a context via `signal.Notify
 
 ## Dependency Injection
 
-Cligo is built on top of [glue](https://go.arpabet.com/glue), a dependency injection framework. Every command receives a `context.Context` and a `glue.Container` in its `Run()` method, giving access to cancellation signals and all registered beans.
+Cligo is built on top of [glue](https://go.arpabet.com/glue), a dependency injection framework. Every command receives a `context.Context` in its `Run()` method. All registered beans are available via DI injection into command struct fields.
 
 All structs passed via `Beans()` are automatically registered in the glue container. Groups and commands are discovered by interface type and registered with the CLI application.
 
@@ -362,8 +361,8 @@ func (cmd *MigrateCmd) Help() (string, string)                           { retur
 func (cmd *MigrateCmd) CommandBeans() []interface{}  {
     return []interface{}{&DatabaseService{}}
 }
-func (cmd *MigrateCmd) Run(ctx context.Context, c glue.Container) error  {
-    // c is an extended container with DatabaseService available
+func (cmd *MigrateCmd) Run(ctx context.Context) error  {
+    // DatabaseService is available via DI injection
     // ctx carries cancellation/timeout signals
     return nil
 }
@@ -519,7 +518,7 @@ type CliGroup interface {
 type CliCommand interface {
     Command() string
     Help() (short string, optionalLong string)
-    Run(ctx context.Context, c glue.Container) error
+    Run(ctx context.Context) error
 }
 
 // CliCommandWithBeans extends CliCommand with command-scoped DI beans.

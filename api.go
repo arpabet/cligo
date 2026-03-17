@@ -28,8 +28,8 @@ type CliCommand interface {
 	Command() string
 	// Help description about the command
 	Help() (short string, optionalLong string)
-	// Run executes the command with the given context and DI container.
-	Run(ctx context.Context, c glue.Container) error
+	// Run executes the command with the given context.
+	Run(ctx context.Context) error
 }
 
 var CliCommandWithBeansClass = reflect.TypeOf((*CliCommandWithBeans)(nil)).Elem()
