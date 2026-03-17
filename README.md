@@ -1,8 +1,49 @@
 # cligo
 
-A declarative CLI framework for Go, inspired by Python's [Click](https://click.palletsprojects.com/) library. Built on top of the [glue](https://go.arpabet.com/glue) dependency injection framework.
+**The CLI framework that thinks like your application, not just your terminal.**
 
-Define commands as Go structs, declare arguments and options via struct tags, and let cligo handle parsing, help generation, and dependency injection automatically.
+Cligo is a declarative CLI framework for Go that brings the power of dependency injection, struct-based declarations, and enterprise configuration patterns to command-line applications. Inspired by Python's [Click](https://click.palletsprojects.com/) and built on top of the [glue](https://go.arpabet.com/glue) DI framework, cligo eliminates the boilerplate of wiring commands, parsing config files, and managing environments -- so you can focus on what your commands actually do.
+
+## Why cligo?
+
+Most Go CLI frameworks stop at flag parsing. Cligo goes further:
+
+- **Declare, don't wire.** Define commands as Go structs with `cli` tags. No manual flag registration, no boilerplate factories.
+- **Dependency injection built in.** Every command receives a DI container. Services, database connections, and configuration are injected automatically -- not threaded through closures or globals.
+- **Spring-like profiles.** Activate `dev`, `staging`, or `prod` configurations with `--profile`. Swap entire service implementations per environment with a single flag -- no other Go CLI framework offers this.
+- **Config files out of the box.** Load `.properties`, `.yaml`, `.json`, `.toml`, or `.env` files without a separate library. Values flow through DI and are available everywhere.
+- **One binary, zero glue code.** No Viper, no separate config library, no manual binding. Cligo unifies CLI parsing, configuration, DI, and execution into a single coherent framework.
+
+## How cligo compares
+
+| Feature | cligo | Cobra | urfave/cli | Kong | go-arg |
+|---------|:-----:|:-----:|:----------:|:----:|:------:|
+| **Struct-tag declarations** | Yes | -- | -- | Yes | Yes |
+| **Dependency injection** | Yes (glue) | -- | -- | Partial (Bind) | -- |
+| **Config files (built-in)** | Yes (5 formats) | Via Viper | Via altsrc | JSON only | -- |
+| **Profile system** | Yes | -- | -- | -- | -- |
+| **.env file support** | Yes | Via Viper | Via altsrc | -- | -- |
+| **Subcommands / groups** | Yes | Yes | Yes | Yes | Yes |
+| **Command aliases** | Yes | Yes | Yes | Yes | -- |
+| **Hidden commands** | Yes | Yes | Yes | Yes | -- |
+| **Env var binding** | Yes | Via Viper | Yes | Yes | Yes |
+| **Slice / repeated options** | Yes | Yes | Yes | Yes | Yes |
+| **Colored help output** | Yes (auto) | -- | -- | -- | -- |
+| **Panic recovery** | Yes | -- | -- | -- | -- |
+| **context.Context** | Yes (signal-aware) | Yes | Yes | Own context | -- |
+| **"Did you mean?" typo hints** | Yes | Yes | Partial | -- | -- |
+| **Command-scoped beans** | Yes | -- | -- | -- | -- |
+| **Optional/required args with defaults** | Yes | Partial | Yes | Yes | Yes |
+| **Short flags (-v, -h)** | Yes | Yes | Yes | Yes | Yes |
+| **Functional options API** | Yes | -- | -- | Yes | -- |
+| **Signal-aware graceful shutdown** | Yes (built-in) | -- | -- | -- | -- |
+
+**Key advantages over alternatives:**
+
+- **vs Cobra:** Cobra requires Viper for config files, env binding, and .env support -- three separate libraries to assemble. Cligo provides all of this in one import. Cobra also lacks struct-tag-based declarations, DI, profiles, colored help, and panic recovery.
+- **vs urfave/cli:** Requires `cli-altsrc` for config files. No DI, no profiles, no struct tags, no colored help. Flag definitions are verbose typed structs rather than declarative tags.
+- **vs Kong:** The closest alternative for struct-based parsing and DI. However, Kong's DI is limited to `Bind()`/`BindTo()` -- it is not a full container with lifecycle management. Kong lacks built-in config file loading (beyond JSON), profiles, colored help, panic recovery, and signal handling.
+- **vs go-arg:** Clean struct-tag parsing but no DI, no config files, no subcommand aliases, no hidden commands, no colored help, no error suggestions.
 
 ## Installation
 
@@ -354,7 +395,7 @@ func main() {
 
 ### Profiles
 
-Cligo integrates with glue's profile system for environment-aware bean registration and configuration. Profiles can be activated via the `--profile` CLI flag, the `Profiles()` option, or the `glue.profiles.active` property.
+Cligo integrates with glue's profile system for environment-aware bean registration and configuration. Profiles can be activated via the `--profile` CLI flag, the `Profile()` option, or the `glue.profiles.active` property.
 
 ```bash
 # Single profile
@@ -363,6 +404,9 @@ myapp --profile dev serve
 # Multiple profiles (comma-separated or repeated)
 myapp --profile dev,local serve
 myapp --profile dev --profile local serve
+
+# Short flag
+myapp -p staging serve
 
 # Equals form
 myapp --profile=staging serve
@@ -394,7 +438,7 @@ Profile expressions supported by glue:
 
 ### Config Files
 
-Use `ConfigFile()` to specify fallback config file paths — the first existing file is loaded via `glue.PropertySource`. Format is detected by extension. Config files can also be specified from the command line with `--config`:
+Use `ConfigFile()` to specify fallback config file paths -- the first existing file is loaded via `glue.PropertySource`. Format is detected by extension. Config files can also be specified from the command line with `--config`:
 
 ```go
 cligo.Main(
@@ -440,6 +484,19 @@ app:
 ```
 
 Config values are merged into `glue.Properties` before the DI container is created, so they're available via `value:"key"` struct tags. Priority: flags > env vars > config file > defaults.
+
+## Error Handling
+
+Cligo provides robust error handling out of the box:
+
+- **Panic recovery:** Panics during command execution are caught and converted to errors, keeping the application stable.
+- **Typo suggestions:** Unknown commands trigger "Did you mean X?" hints using Levenshtein distance matching, covering commands, groups, and aliases.
+- **Helpful error messages:** Missing arguments, invalid types, and unknown commands all produce messages with usage hints and `--help` pointers.
+
+```
+$ app shp new titanic
+Error: unknown command or group: shp. Did you mean "ship"?
+```
 
 ## Entry Points
 
