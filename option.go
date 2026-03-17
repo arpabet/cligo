@@ -97,6 +97,16 @@ func Context(ctx context.Context) Option {
 	})
 }
 
+// ConfigFile specifies config file paths to try loading into glue.Properties.
+// Supported formats (by extension): .env, .properties, .yaml, .yml, .json.
+// Config values feed into glue.Properties and are available via value:"key" struct tags.
+// Priority: flags > env vars > config file > defaults.
+func ConfigFile(path string) Option {
+	return optionFunc(func(a *implCliApplication) {
+		a.configFiles = append(a.configFiles, path)
+	})
+}
+
 // Color forces colored output on or off.
 // By default, color is auto-detected: enabled for terminals, disabled for pipes.
 // Respects the NO_COLOR environment variable (https://no-color.org/).

@@ -35,6 +35,7 @@ type implCliApplication struct {
 	build        string
 	verbose      bool
 	color        *bool
+	configFiles  []string
 	ctx          context.Context
 	beans        []interface{}
 	properties   glue.Properties
@@ -132,6 +133,10 @@ func (app *implCliApplication) getProperties() glue.Properties {
 
 func (app *implCliApplication) getContext() context.Context {
 	return app.ctx
+}
+
+func (app *implCliApplication) getConfigFiles() []string {
+	return app.configFiles
 }
 
 func hasVerbose(args []string) bool {
@@ -798,7 +803,29 @@ func Run(options ...Option) (err error) {
 
 	app := New(options...)
 
-	var glueOpts []glue.ContainerOption
+	var beans []any
+
+	// Resolve config files into glue PropertySource beans
+	configFiles := app.getConfigFiles()
+	if len(configFiles) > 0 {
+		configBeans, err := resolveConfigFiles(configFiles)
+		if err != nil {
+			return err
+		}
+		beans = configBeans
+	}
+
+	beans = append(beans, app.getBeans()...)
+
+	// Use user-provided context or create a signal-aware one
+	ctx := app.getContext()
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer cancel()
+	}
+
+	glueOpts := []glue.ContainerOption{glue.WithContext(ctx)}
 
 	if hasVerbose(os.Args[1:]) {
 		glueOpts = append(glueOpts, glue.WithLogger(log.Default()))
@@ -808,19 +835,13 @@ func Run(options ...Option) (err error) {
 		glueOpts = append(glueOpts, glue.WithProperties(app.getProperties()))
 	}
 
-	c, err := glue.NewWithOptions(glueOpts, app.getBeans()...)
+	glueOpts = append(glueOpts, glue.WithBeans(beans...))
+
+	c, err := glue.NewWithOptions(glueOpts...)
 	if err != nil {
 		return fmt.Errorf("glue.New: %w", err)
 	}
 	defer c.Close()
-
-	// Use user-provided context or create a signal-aware one
-	ctx := app.getContext()
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer cancel()
-	}
 
 	visited := make(map[uintptr]bool)
 

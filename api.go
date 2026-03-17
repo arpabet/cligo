@@ -59,6 +59,9 @@ type CliApplication interface {
 	// Non-public method to keep optional context private
 	getContext() context.Context
 
+	// Non-public method
+	getConfigFiles() []string
+
 	// RegisterGroup register the cli group in the context
 	RegisterGroup(group CliGroup) error
 

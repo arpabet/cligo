@@ -229,6 +229,7 @@ cligo.Main(
 | `Verbose(b)` | Force verbose mode on |
 | `Context(ctx)` | Custom `context.Context` (defaults to signal-aware context) |
 | `Color(b)` | Force colored output on/off (auto-detected by default, respects `NO_COLOR`) |
+| `ConfigFile(path)` | Load config from first existing file (`.properties`, `.yaml`, `.json`, `.toml`) |
 | `Beans(b...)` | Groups, commands, and other DI beans |
 | `Properties(p)` | Glue properties for dependency injection |
 | `Nope()` | No-op (useful for conditional options) |
@@ -324,6 +325,40 @@ func main() {
     )
 }
 ```
+
+### Config Files
+
+Use `ConfigFile()` to load configuration from files into glue properties. Call it multiple times to specify fallback paths — the first existing file is loaded via `glue.PropertySource`. Format is detected by extension.
+
+```go
+cligo.Main(
+    cligo.ConfigFile("config.properties"),
+    cligo.ConfigFile("config.yaml"),
+    cligo.ConfigFile("config.json"),
+    cligo.Beans(&AddUser{}),
+)
+```
+
+Supported formats:
+
+| Extension | Format | Example |
+|-----------|--------|---------|
+| `.properties` | Java properties (native glue format) | `app.profile = dev` |
+| `.yaml`, `.yml` | YAML (nested keys flattened with dots) | `app:\n  profile: dev` |
+| `.json` | JSON (nested keys flattened with dots) | `{"app": {"profile": "dev"}}` |
+| `.toml` | TOML | `[app]\nprofile = "dev"` |
+
+YAML and JSON nested structures are flattened with dot notation:
+
+```yaml
+# config.yaml → app.db.host=localhost, app.db.port=5432
+app:
+  db:
+    host: localhost
+    port: 5432
+```
+
+Config values are merged into `glue.Properties` before the DI container is created, so they're available via `value:"key"` struct tags. Priority: flags > env vars > config file > defaults.
 
 ## Entry Points
 

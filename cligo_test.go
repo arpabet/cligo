@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -69,8 +70,8 @@ type newShipCmd struct {
 	ran    bool
 }
 
-func (c *newShipCmd) Command() string            { return "new" }
-func (c *newShipCmd) Help() (string, string)     { return "Create a ship.", "" }
+func (c *newShipCmd) Command() string                               { return "new" }
+func (c *newShipCmd) Help() (string, string)                        { return "Create a ship.", "" }
 func (c *newShipCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 // setSpeedCmd has a single int positional argument.
@@ -80,8 +81,8 @@ type setSpeedCmd struct {
 	ran    bool
 }
 
-func (c *setSpeedCmd) Command() string            { return "setspeed" }
-func (c *setSpeedCmd) Help() (string, string)     { return "Set speed.", "" }
+func (c *setSpeedCmd) Command() string                               { return "setspeed" }
+func (c *setSpeedCmd) Help() (string, string)                        { return "Set speed.", "" }
 func (c *setSpeedCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 // moveShipCmd has float positional args and several typed options including a short flag.
@@ -96,8 +97,8 @@ type moveShipCmd struct {
 	ran    bool
 }
 
-func (c *moveShipCmd) Command() string            { return "move" }
-func (c *moveShipCmd) Help() (string, string)     { return "Move a ship.", "" }
+func (c *moveShipCmd) Command() string                               { return "move" }
+func (c *moveShipCmd) Help() (string, string)                        { return "Move a ship.", "" }
 func (c *moveShipCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 // failCmd always returns an error from Run.
@@ -105,26 +106,30 @@ type failCmd struct {
 	Parent CliGroup `cli:"group=ship"`
 }
 
-func (c *failCmd) Command() string            { return "fail" }
-func (c *failCmd) Help() (string, string)     { return "Always fails.", "" }
-func (c *failCmd) Run(_ context.Context, _ glue.Container) error { return fmt.Errorf("intentional failure") }
+func (c *failCmd) Command() string        { return "fail" }
+func (c *failCmd) Help() (string, string) { return "Always fails.", "" }
+func (c *failCmd) Run(_ context.Context, _ glue.Container) error {
+	return fmt.Errorf("intentional failure")
+}
 
 // panicErrCmd panics with an error value.
 type panicErrCmd struct {
 	Parent CliGroup `cli:"group=ship"`
 }
 
-func (c *panicErrCmd) Command() string            { return "panicerr" }
-func (c *panicErrCmd) Help() (string, string)     { return "Panics with error.", "" }
-func (c *panicErrCmd) Run(_ context.Context, _ glue.Container) error { panic(fmt.Errorf("panic error")) }
+func (c *panicErrCmd) Command() string        { return "panicerr" }
+func (c *panicErrCmd) Help() (string, string) { return "Panics with error.", "" }
+func (c *panicErrCmd) Run(_ context.Context, _ glue.Container) error {
+	panic(fmt.Errorf("panic error"))
+}
 
 // panicStrCmd panics with a plain string.
 type panicStrCmd struct {
 	Parent CliGroup `cli:"group=ship"`
 }
 
-func (c *panicStrCmd) Command() string            { return "panicstr" }
-func (c *panicStrCmd) Help() (string, string)     { return "Panics with string.", "" }
+func (c *panicStrCmd) Command() string                               { return "panicstr" }
+func (c *panicStrCmd) Help() (string, string)                        { return "Panics with string.", "" }
 func (c *panicStrCmd) Run(_ context.Context, _ glue.Container) error { panic("string panic") }
 
 // panicOtherCmd panics with a non-error, non-string value.
@@ -132,8 +137,8 @@ type panicOtherCmd struct {
 	Parent CliGroup `cli:"group=ship"`
 }
 
-func (c *panicOtherCmd) Command() string            { return "panicother" }
-func (c *panicOtherCmd) Help() (string, string)     { return "Panics with int.", "" }
+func (c *panicOtherCmd) Command() string                               { return "panicother" }
+func (c *panicOtherCmd) Help() (string, string)                        { return "Panics with int.", "" }
 func (c *panicOtherCmd) Run(_ context.Context, _ glue.Container) error { panic(42) }
 
 // scopeBean is a DI bean provided by beanCmd's command scope.
@@ -145,9 +150,9 @@ type beanCmd struct {
 	ran    bool
 }
 
-func (c *beanCmd) Command() string              { return "wbeans" }
-func (c *beanCmd) Help() (string, string)       { return "Command with beans.", "" }
-func (c *beanCmd) CommandBeans() []interface{}  { return []interface{}{&scopeBean{Value: "injected"}} }
+func (c *beanCmd) Command() string                               { return "wbeans" }
+func (c *beanCmd) Help() (string, string)                        { return "Command with beans.", "" }
+func (c *beanCmd) CommandBeans() []interface{}                   { return []interface{}{&scopeBean{Value: "injected"}} }
 func (c *beanCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 // orphanGroup has no CliGroup field, so extractParentGroup returns "".
@@ -159,17 +164,17 @@ func (g *orphanGroup) Help() (string, string) { return "Orphan group.", "" }
 // orphanCmd has no CliGroup field.
 type orphanCmd struct{}
 
-func (c *orphanCmd) Command() string            { return "orphan" }
-func (c *orphanCmd) Help() (string, string)     { return "Orphan command.", "" }
+func (c *orphanCmd) Command() string                               { return "orphan" }
+func (c *orphanCmd) Help() (string, string)                        { return "Orphan command.", "" }
 func (c *orphanCmd) Run(_ context.Context, _ glue.Container) error { return nil }
 
 // orphanBeanCmd implements CliCommandWithBeans but has no CliGroup parent field.
 type orphanBeanCmd struct{}
 
-func (c *orphanBeanCmd) Command() string             { return "orphanbean" }
-func (c *orphanBeanCmd) Help() (string, string)      { return "Orphan bean command.", "" }
+func (c *orphanBeanCmd) Command() string                               { return "orphanbean" }
+func (c *orphanBeanCmd) Help() (string, string)                        { return "Orphan bean command.", "" }
 func (c *orphanBeanCmd) Run(_ context.Context, _ glue.Container) error { return nil }
-func (c *orphanBeanCmd) CommandBeans() []interface{} { return nil }
+func (c *orphanBeanCmd) CommandBeans() []interface{}                   { return nil }
 
 // ─── parseCliTag ─────────────────────────────────────────────────────────────
 
@@ -851,8 +856,8 @@ type ctxCheckCmd struct {
 	ran    bool
 }
 
-func (c *ctxCheckCmd) Command() string                              { return "ctxcheck" }
-func (c *ctxCheckCmd) Help() (string, string)                       { return "Check context.", "" }
+func (c *ctxCheckCmd) Command() string        { return "ctxcheck" }
+func (c *ctxCheckCmd) Help() (string, string) { return "Check context.", "" }
 func (c *ctxCheckCmd) Run(ctx context.Context, _ glue.Container) error {
 	c.gotCtx = ctx
 	c.ran = true
@@ -901,9 +906,9 @@ type optArgCmd struct {
 	ran    bool
 }
 
-func (c *optArgCmd) Command() string                                  { return "optarg" }
-func (c *optArgCmd) Help() (string, string)                           { return "Optional arg test.", "" }
-func (c *optArgCmd) Run(_ context.Context, _ glue.Container) error    { c.ran = true; return nil }
+func (c *optArgCmd) Command() string                               { return "optarg" }
+func (c *optArgCmd) Help() (string, string)                        { return "Optional arg test.", "" }
+func (c *optArgCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 // reqArgCmd has an explicitly required arg.
 type reqArgCmd struct {
@@ -912,9 +917,9 @@ type reqArgCmd struct {
 	ran    bool
 }
 
-func (c *reqArgCmd) Command() string                                  { return "reqarg" }
-func (c *reqArgCmd) Help() (string, string)                           { return "Required arg test.", "" }
-func (c *reqArgCmd) Run(_ context.Context, _ glue.Container) error    { c.ran = true; return nil }
+func (c *reqArgCmd) Command() string                               { return "reqarg" }
+func (c *reqArgCmd) Help() (string, string)                        { return "Required arg test.", "" }
+func (c *reqArgCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 // optIntArgCmd has an optional int arg with default.
 type optIntArgCmd struct {
@@ -923,9 +928,9 @@ type optIntArgCmd struct {
 	ran    bool
 }
 
-func (c *optIntArgCmd) Command() string                                  { return "optint" }
-func (c *optIntArgCmd) Help() (string, string)                           { return "Optional int arg.", "" }
-func (c *optIntArgCmd) Run(_ context.Context, _ glue.Container) error    { c.ran = true; return nil }
+func (c *optIntArgCmd) Command() string                               { return "optint" }
+func (c *optIntArgCmd) Help() (string, string)                        { return "Optional int arg.", "" }
+func (c *optIntArgCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 func TestRun_OptionalArg_UsesDefault(t *testing.T) {
 	cmd := &optArgCmd{}
@@ -1027,9 +1032,9 @@ type envCmd struct {
 	ran    bool
 }
 
-func (c *envCmd) Command() string                                  { return "envcmd" }
-func (c *envCmd) Help() (string, string)                           { return "Env var test.", "" }
-func (c *envCmd) Run(_ context.Context, _ glue.Container) error    { c.ran = true; return nil }
+func (c *envCmd) Command() string                               { return "envcmd" }
+func (c *envCmd) Help() (string, string)                        { return "Env var test.", "" }
+func (c *envCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
 
 func TestRun_EnvVar_UsedWhenFlagNotSet(t *testing.T) {
 	os.Setenv("TEST_CLI_PORT", "9090")
@@ -1317,4 +1322,160 @@ func TestExtractParentInfo_Plain(t *testing.T) {
 	if info.alias != "" {
 		t.Errorf("expected empty alias, got %q", info.alias)
 	}
+}
+
+// ─── Config file loading ─────────────────────────────────────────────────────
+
+// propCmd reads a value from glue properties via the value struct tag.
+type propCmd struct {
+	Parent  CliGroup `cli:"group=cli"`
+	Profile string   `value:"app.profile"`
+	Port    string   `value:"app.port"`
+	ran     bool
+}
+
+func (c *propCmd) Command() string                               { return "propcmd" }
+func (c *propCmd) Help() (string, string)                        { return "Prop command.", "" }
+func (c *propCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+
+func writeTempFile(t *testing.T, name, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	return path
+}
+
+func TestConfigFile_PropertiesFormat(t *testing.T) {
+	path := writeTempFile(t, "config.properties", `
+# Java properties format
+app.profile = production
+app.port = 443
+`)
+	cmd := &propCmd{}
+	withArgs([]string{"app", "propcmd"}, func() {
+		if err := Run(ConfigFile(path), Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "production" {
+		t.Errorf("expected Profile=production, got %q", cmd.Profile)
+	}
+}
+
+func TestConfigFile_YAMLFormat(t *testing.T) {
+	path := writeTempFile(t, "config.yaml", `
+app:
+  profile: dev
+  port: "8080"
+`)
+	cmd := &propCmd{}
+	withArgs([]string{"app", "propcmd"}, func() {
+		if err := Run(ConfigFile(path), Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "dev" {
+		t.Errorf("expected Profile=dev, got %q", cmd.Profile)
+	}
+	if cmd.Port != "8080" {
+		t.Errorf("expected Port=8080, got %q", cmd.Port)
+	}
+}
+
+func TestConfigFile_YAMLFormat_YmlExtension(t *testing.T) {
+	path := writeTempFile(t, "config.yml", `
+app:
+  profile: test
+  port: "5000"
+`)
+	cmd := &propCmd{}
+	withArgs([]string{"app", "propcmd"}, func() {
+		if err := Run(ConfigFile(path), Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "test" {
+		t.Errorf("expected Profile=test, got %q", cmd.Profile)
+	}
+}
+
+func TestConfigFile_JSONFormat(t *testing.T) {
+	path := writeTempFile(t, "config.json", `{
+  "app": {
+    "profile": "live",
+    "port": "443"
+  }
+}`)
+	cmd := &propCmd{}
+	withArgs([]string{"app", "propcmd"}, func() {
+		if err := Run(ConfigFile(path), Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "live" {
+		t.Errorf("expected Profile=live, got %q", cmd.Profile)
+	}
+	if cmd.Port != "443" {
+		t.Errorf("expected Port=443, got %q", cmd.Port)
+	}
+}
+
+func TestConfigFile_FirstExistingFileWins(t *testing.T) {
+	path := writeTempFile(t, "app.properties", "app.profile=from-props\napp.port=80")
+	cmd := &propCmd{}
+	withArgs([]string{"app", "propcmd"}, func() {
+		if err := Run(ConfigFile("/nonexistent/app.properties"), ConfigFile(path), Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "from-props" {
+		t.Errorf("expected Profile=from-props, got %q", cmd.Profile)
+	}
+}
+
+func TestConfigFile_NoFileFound_NotAnError(t *testing.T) {
+	withArgs([]string{"app", "--help"}, func() {
+		captureOutput(func() {
+			err := Run(ConfigFile("/nonexistent/a.properties"), ConfigFile("/nonexistent/b.yaml"))
+			if err != nil {
+				t.Errorf("missing config files should not be an error, got: %v", err)
+			}
+		})
+	})
+}
+
+func TestConfigFile_MergesWithExistingProperties(t *testing.T) {
+	path := writeTempFile(t, "app.properties", `app.port=7070`)
+	props := glue.NewProperties()
+	props.Set("app.profile", "preset")
+
+	cmd := &propCmd{}
+	withArgs([]string{"app", "propcmd"}, func() {
+		if err := Run(Properties(props), ConfigFile(path), Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Profile != "preset" {
+		t.Errorf("expected Profile=preset (from existing props), got %q", cmd.Profile)
+	}
+	if cmd.Port != "7070" {
+		t.Errorf("expected Port=7070 (from config file), got %q", cmd.Port)
+	}
+}
+
+func TestConfigFile_UnsupportedExtension_ReturnsError(t *testing.T) {
+	path := writeTempFile(t, "config.xml", `<config/>`)
+	withArgs([]string{"app", "--help"}, func() {
+		captureOutput(func() {
+			err := Run(ConfigFile(path))
+			if err == nil {
+				t.Error("expected error for unsupported config format")
+			}
+			if !strings.Contains(err.Error(), "unsupported") {
+				t.Errorf("expected 'unsupported' in error, got: %v", err)
+			}
+		})
+	})
 }

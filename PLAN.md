@@ -29,7 +29,7 @@
 - [x] **3.4** Colored/formatted output — optional ANSI color support for help and errors.
 - [ ] **3.5** Man page generation — generate man pages from command definitions.
 - [ ] **3.6** Testing helpers — `cligo.TestRun(args []string, beans ...interface{}) error` for integration testing without `os.Args`.
-- [ ] **3.7** Config file support — integrate with glue properties to load from YAML/TOML/env files automatically.
+- [x] **3.7** Config file support — integrate with glue properties to load from YAML/TOML/env files automatically.
 - [ ] **3.8** Plugin system — allow loading commands from external binaries or Go plugins.
 
 ## Phase 4: Developer Experience
