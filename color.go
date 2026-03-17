@@ -16,9 +16,9 @@ const (
 	ansiCyan   = "\033[36m"
 )
 
-func (app *implCliApplication) isColorEnabled() bool {
-	if app.color != nil {
-		return *app.color
+func (t *implCliApplication) isColorEnabled() bool {
+	if t.color != nil {
+		return *t.color
 	}
 	if os.Getenv("NO_COLOR") != "" {
 		return false
@@ -30,8 +30,8 @@ func (app *implCliApplication) isColorEnabled() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
-func (app *implCliApplication) styled(s string, codes ...string) string {
-	if !app.isColorEnabled() {
+func (t *implCliApplication) styled(s string, codes ...string) string {
+	if !t.isColorEnabled() {
 		return s
 	}
 	var prefix string
