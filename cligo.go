@@ -270,10 +270,16 @@ func (app *implCliApplication) executeCommand(ctx context.Context, c glue.Contai
 	flagSet := pflag.NewFlagSet(cmd.Command(), pflag.ContinueOnError)
 	flagSet.Usage = func() { app.printCommandHelp(cmd, stack) }
 
-	// Track arguments and their positions
-	var arguments []string
-	var positions []int
+	type argInfo struct {
+		name     string
+		position int
+		required bool
+		defVal   string
+	}
+
+	var argDefs []argInfo
 	options := make(map[string]reflect.Value)
+	envVars := make(map[string]string) // option name -> env var name
 
 	// First pass: identify arguments and register options
 	for i := 0; i < cmdType.NumField(); i++ {
@@ -287,8 +293,14 @@ func (app *implCliApplication) executeCommand(ctx context.Context, c glue.Contai
 
 		// Handle argument
 		if argName, ok := tagParts["argument"]; ok {
-			arguments = append(arguments, argName)
-			positions = append(positions, i)
+			_, hasDefault := tagParts["default"]
+			_, hasRequired := tagParts["required"]
+			argDefs = append(argDefs, argInfo{
+				name:     argName,
+				position: i,
+				required: !hasDefault || hasRequired,
+				defVal:   tagParts["default"],
+			})
 			continue
 		}
 
@@ -299,6 +311,16 @@ func (app *implCliApplication) executeCommand(ctx context.Context, c glue.Contai
 
 			shortFlag := strings.TrimPrefix(tagParts["short"], "-")
 			helpText := tagParts["help"]
+
+			// Track environment variable binding
+			if envVar, ok := tagParts["env"]; ok {
+				envVars[optName] = envVar
+				if helpText != "" {
+					helpText = helpText + " [$" + envVar + "]"
+				} else {
+					helpText = "[$" + envVar + "]"
+				}
+			}
 
 			// Register flag with the flag set based on field type
 			switch fieldVal.Kind() {
@@ -365,23 +387,21 @@ func (app *implCliApplication) executeCommand(ctx context.Context, c glue.Contai
 		app.verbose = true
 	}
 
-	// Handle positional arguments
-	//if len(argValues) < len(arguments) {
-	//	Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
-	//	return fmt.Errorf("not enough arguments provided, expected %d, got %d", len(arguments), len(argValues))
-	//}
-
 	// Set argument values
 	argIndex := 0
-	for i, argName := range arguments {
-		fieldIndex := positions[i]
-		field := cmdValue.Field(fieldIndex)
+	for _, arg := range argDefs {
+		field := cmdValue.Field(arg.position)
 		if argIndex >= len(argValues) {
-			Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
-			return fmt.Errorf("missing argument '%s' on position %d", argName, fieldIndex)
+			if arg.required {
+				Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
+				return fmt.Errorf("missing required argument '%s'", arg.name)
+			}
+			if arg.defVal != "" {
+				setFieldFromString(field, arg.defVal)
+			}
+			continue
 		}
 
-		// Set the field value based on its type
 		switch field.Kind() {
 		case reflect.String:
 			field.SetString(argValues[argIndex])
@@ -389,37 +409,35 @@ func (app *implCliApplication) executeCommand(ctx context.Context, c glue.Contai
 			val, err := strconv.ParseInt(argValues[argIndex], 10, 64)
 			if err != nil {
 				Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
-				return fmt.Errorf("invalid integer for argument %s: %s", argName, argValues[argIndex])
+				return fmt.Errorf("invalid integer for argument %s: %s", arg.name, argValues[argIndex])
 			}
 			field.SetInt(val)
 		case reflect.Float32, reflect.Float64:
 			val, err := strconv.ParseFloat(argValues[argIndex], 64)
 			if err != nil {
 				Echo("%s\n%s\n", app.getCommandUsage(cmd, stack), app.getCommandTryUsage(cmd, stack))
-				return fmt.Errorf("invalid float for argument %s: %s", argName, argValues[argIndex])
+				return fmt.Errorf("invalid float for argument %s: %s", arg.name, argValues[argIndex])
 			}
 			field.SetFloat(val)
 		}
 		argIndex++
 	}
 
-	// Set option values, including flags not explicitly set so defaults are applied.
+	// Set option values: explicit flag > env var > default.
 	flagSet.VisitAll(func(f *pflag.Flag) {
 		if field, ok := options[f.Name]; ok {
-			// Set the field value based on its type
-			switch field.Kind() {
-			case reflect.String:
-				field.SetString(f.Value.String())
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				val, _ := strconv.ParseInt(f.Value.String(), 10, 64)
-				field.SetInt(val)
-			case reflect.Float32, reflect.Float64:
-				val, _ := strconv.ParseFloat(f.Value.String(), 64)
-				field.SetFloat(val)
-			case reflect.Bool:
-				val, _ := strconv.ParseBool(f.Value.String())
-				field.SetBool(val)
+			value := f.Value.String()
+
+			// If flag not explicitly set, try environment variable
+			if !flagSet.Changed(f.Name) {
+				if envVar, ok := envVars[f.Name]; ok {
+					if envValue := os.Getenv(envVar); envValue != "" {
+						value = envValue
+					}
+				}
 			}
+
+			setFieldFromString(field, value)
 		}
 	})
 
@@ -480,7 +498,7 @@ func (app *implCliApplication) printHelp(groupName string, stack []string) {
 
 }
 
-// getCommandTryUsage gets printable help
+// getCommandUsage gets printable usage line
 func (app *implCliApplication) getCommandUsage(cmd CliCommand, stack []string) string {
 
 	// Print arguments and options
@@ -498,7 +516,13 @@ func (app *implCliApplication) getCommandUsage(cmd CliCommand, stack []string) s
 
 		tagParts := parseCliTag(cliTag)
 		if argName, ok := tagParts["argument"]; ok {
-			arguments = append(arguments, strings.ToUpper(argName))
+			name := strings.ToUpper(argName)
+			_, hasDefault := tagParts["default"]
+			_, hasRequired := tagParts["required"]
+			if hasDefault && !hasRequired {
+				name = "[" + name + "]"
+			}
+			arguments = append(arguments, name)
 		}
 	}
 
@@ -547,6 +571,13 @@ func (app *implCliApplication) printCommandHelp(cmd CliCommand, stack []string) 
 			if help == "" {
 				help = fmt.Sprintf("%s argument", argName)
 			}
+			_, hasDefault := tagParts["default"]
+			_, hasRequired := tagParts["required"]
+			if hasDefault && !hasRequired {
+				help = help + fmt.Sprintf(" [default: %s]", tagParts["default"])
+			} else {
+				help = help + " [required]"
+			}
 			argLines = append(argLines, fmt.Sprintf("  %s\t%s", strings.ToUpper(argName), help))
 		}
 	}
@@ -584,8 +615,30 @@ func (app *implCliApplication) printCommandHelp(cmd CliCommand, stack []string) 
 				defaultText = fmt.Sprintf(" [default: %s]", defaultVal)
 			}
 
-			fmt.Printf("  --%s  %s%s\n", optName, help, defaultText)
+			envText := ""
+			if envVar, ok := tagParts["env"]; ok {
+				envText = fmt.Sprintf(" [$%s]", envVar)
+			}
+
+			fmt.Printf("  --%s  %s%s%s\n", optName, help, defaultText, envText)
 		}
+	}
+}
+
+// setFieldFromString sets a reflect.Value from a string, handling type conversion.
+func setFieldFromString(field reflect.Value, value string) {
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(value)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		val, _ := strconv.ParseInt(value, 10, 64)
+		field.SetInt(val)
+	case reflect.Float32, reflect.Float64:
+		val, _ := strconv.ParseFloat(value, 64)
+		field.SetFloat(val)
+	case reflect.Bool:
+		val, _ := strconv.ParseBool(value)
+		field.SetBool(val)
 	}
 }
 

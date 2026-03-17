@@ -115,26 +115,27 @@ The `Help()` method returns `(shortDescription, optionalLongDescription)`. The s
 
 ### Arguments
 
-Positional arguments are declared with `cli:"argument=<name>"` struct tags. They are parsed in the order they appear in the struct:
+Positional arguments are declared with `cli:"argument=<name>"` struct tags. They are parsed in the order they appear in the struct. Arguments are required by default; add `default=<value>` to make them optional:
 
 ```go
 type Move struct {
     Parent cligo.CliGroup `cli:"group=ship"`
-    Ship   string         `cli:"argument=ship"`
-    X      float64        `cli:"argument=x"`
-    Y      float64        `cli:"argument=y"`
+    Ship   string         `cli:"argument=ship"`           // required (default)
+    X      float64        `cli:"argument=x,required"`     // explicitly required
+    Y      float64        `cli:"argument=y,default=0.0"`  // optional with default
 }
 ```
 
 ```
-$ app ship move titanic 1.5 2.5
+$ app ship move titanic 1.5       # Y defaults to 0.0
+$ app ship move titanic 1.5 2.5   # Y explicitly set
 ```
 
 Supported argument types: `string`, `int` (all sizes), `float32`, `float64`.
 
 ### Options
 
-Named flags are declared with `cli:"option=<name>"` and support defaults, help text, and short flags:
+Named flags are declared with `cli:"option=<name>"` and support defaults, help text, short flags, and environment variable binding:
 
 ```go
 type Move struct {
@@ -143,6 +144,7 @@ type Move struct {
     Speed  int            `cli:"option=speed,short=-s,default=10,help=Speed in knots"`
     Dry    bool           `cli:"option=dry,default=false,help=Dry run mode"`
     Label  string         `cli:"option=label,default=unnamed,help=Ship label"`
+    Port   int            `cli:"option=port,default=8080,env=APP_PORT,help=Port number"`
 }
 ```
 
@@ -150,7 +152,10 @@ type Move struct {
 $ app ship move titanic --speed=20
 $ app ship move titanic -s 20
 $ app ship move titanic --dry --label=flagship
+$ APP_PORT=3000 app ship move titanic   # port from env
 ```
+
+Option value priority: explicit flag > environment variable > default value.
 
 Supported option types: `string`, `int` (all sizes), `float32`, `float64`, `bool`.
 
@@ -161,13 +166,15 @@ All metadata is declared in the `cli` struct tag with comma-separated `key=value
 | Tag | Description | Example |
 |-----|-------------|---------|
 | `group=<name>` | Parent group (required on the `CliGroup` field) | `cli:"group=cli"` |
-| `argument=<name>` | Positional argument | `cli:"argument=name"` |
+| `argument=<name>` | Positional argument (required by default) | `cli:"argument=name"` |
 | `option=<name>` | Named flag/option | `cli:"option=speed"` |
+| `required` | Explicitly marks an argument as required | `cli:"argument=name,required"` |
 | `short=-<char>` | Single-character short flag | `cli:"option=speed,short=-s"` |
-| `default=<value>` | Default value for an option | `cli:"option=speed,default=10"` |
+| `default=<value>` | Default value for an option or argument | `cli:"argument=y,default=0.0"` |
 | `help=<text>` | Help text for an option | `cli:"option=speed,help=Speed in knots"` |
+| `env=<VAR>` | Environment variable fallback for an option | `cli:"option=port,env=APP_PORT"` |
 
-Tags can be combined: `cli:"option=speed,short=-s,default=10,help=Speed in knots"`
+Tags can be combined: `cli:"option=speed,short=-s,default=10,env=SPEED,help=Speed in knots"`
 
 ## Application Options
 
@@ -321,6 +328,7 @@ type CliCommandWithBeans interface {
     CliCommand
     CommandBeans() []interface{}
 }
+
 ```
 
 ## Examples

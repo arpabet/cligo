@@ -891,6 +891,216 @@ func TestRun_CustomContext_ThreadedThrough(t *testing.T) {
 	}
 }
 
+// ─── Run: required/optional arguments ─────────────────────────────────────────
+
+// optArgCmd has a required arg and an optional arg with default.
+type optArgCmd struct {
+	Parent CliGroup `cli:"group=cli"`
+	Name   string   `cli:"argument=name"`
+	Color  string   `cli:"argument=color,default=blue"`
+	ran    bool
+}
+
+func (c *optArgCmd) Command() string                                  { return "optarg" }
+func (c *optArgCmd) Help() (string, string)                           { return "Optional arg test.", "" }
+func (c *optArgCmd) Run(_ context.Context, _ glue.Container) error    { c.ran = true; return nil }
+
+// reqArgCmd has an explicitly required arg.
+type reqArgCmd struct {
+	Parent CliGroup `cli:"group=cli"`
+	Name   string   `cli:"argument=name,required"`
+	ran    bool
+}
+
+func (c *reqArgCmd) Command() string                                  { return "reqarg" }
+func (c *reqArgCmd) Help() (string, string)                           { return "Required arg test.", "" }
+func (c *reqArgCmd) Run(_ context.Context, _ glue.Container) error    { c.ran = true; return nil }
+
+// optIntArgCmd has an optional int arg with default.
+type optIntArgCmd struct {
+	Parent CliGroup `cli:"group=cli"`
+	Count  int      `cli:"argument=count,default=5"`
+	ran    bool
+}
+
+func (c *optIntArgCmd) Command() string                                  { return "optint" }
+func (c *optIntArgCmd) Help() (string, string)                           { return "Optional int arg.", "" }
+func (c *optIntArgCmd) Run(_ context.Context, _ glue.Container) error    { c.ran = true; return nil }
+
+func TestRun_OptionalArg_UsesDefault(t *testing.T) {
+	cmd := &optArgCmd{}
+	withArgs([]string{"app", "optarg", "alice"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if !cmd.ran {
+		t.Error("command was not executed")
+	}
+	if cmd.Name != "alice" {
+		t.Errorf("expected Name=alice, got %q", cmd.Name)
+	}
+	if cmd.Color != "blue" {
+		t.Errorf("expected Color=blue (default), got %q", cmd.Color)
+	}
+}
+
+func TestRun_OptionalArg_ProvidedExplicitly(t *testing.T) {
+	cmd := &optArgCmd{}
+	withArgs([]string{"app", "optarg", "alice", "red"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Color != "red" {
+		t.Errorf("expected Color=red, got %q", cmd.Color)
+	}
+}
+
+func TestRun_RequiredArg_Missing_ReturnsError(t *testing.T) {
+	withArgs([]string{"app", "optarg"}, func() {
+		captureOutput(func() {
+			err := Run(Beans(&optArgCmd{}))
+			if err == nil {
+				t.Error("expected error for missing required argument")
+			}
+			if !strings.Contains(err.Error(), "required") {
+				t.Errorf("expected 'required' in error, got: %v", err)
+			}
+		})
+	})
+}
+
+func TestRun_ExplicitRequiredTag_Missing_ReturnsError(t *testing.T) {
+	withArgs([]string{"app", "reqarg"}, func() {
+		captureOutput(func() {
+			err := Run(Beans(&reqArgCmd{}))
+			if err == nil {
+				t.Error("expected error for missing explicitly required argument")
+			}
+		})
+	})
+}
+
+func TestRun_OptionalIntArg_UsesDefault(t *testing.T) {
+	cmd := &optIntArgCmd{}
+	withArgs([]string{"app", "optint"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Count != 5 {
+		t.Errorf("expected Count=5 (default), got %d", cmd.Count)
+	}
+}
+
+func TestRun_OptionalIntArg_ProvidedExplicitly(t *testing.T) {
+	cmd := &optIntArgCmd{}
+	withArgs([]string{"app", "optint", "99"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Count != 99 {
+		t.Errorf("expected Count=99, got %d", cmd.Count)
+	}
+}
+
+func TestRun_CommandHelp_ShowsOptionalArgBrackets(t *testing.T) {
+	withArgs([]string{"app", "optarg", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run(Beans(&optArgCmd{}))
+		})
+		if !strings.Contains(out, "[COLOR]") {
+			t.Errorf("expected [COLOR] for optional arg in usage, got: %q", out)
+		}
+	})
+}
+
+// ─── Run: environment variable binding ───────────────────────────────────────
+
+// envCmd has an option with env var binding.
+type envCmd struct {
+	Parent CliGroup `cli:"group=cli"`
+	Port   int      `cli:"option=port,default=8080,env=TEST_CLI_PORT,help=Port number"`
+	Host   string   `cli:"option=host,default=localhost,env=TEST_CLI_HOST,help=Hostname"`
+	ran    bool
+}
+
+func (c *envCmd) Command() string                                  { return "envcmd" }
+func (c *envCmd) Help() (string, string)                           { return "Env var test.", "" }
+func (c *envCmd) Run(_ context.Context, _ glue.Container) error    { c.ran = true; return nil }
+
+func TestRun_EnvVar_UsedWhenFlagNotSet(t *testing.T) {
+	os.Setenv("TEST_CLI_PORT", "9090")
+	defer os.Unsetenv("TEST_CLI_PORT")
+
+	cmd := &envCmd{}
+	withArgs([]string{"app", "envcmd"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Port != 9090 {
+		t.Errorf("expected Port=9090 from env, got %d", cmd.Port)
+	}
+}
+
+func TestRun_EnvVar_FlagTakesPrecedence(t *testing.T) {
+	os.Setenv("TEST_CLI_PORT", "9090")
+	defer os.Unsetenv("TEST_CLI_PORT")
+
+	cmd := &envCmd{}
+	withArgs([]string{"app", "envcmd", "--port=3000"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Port != 3000 {
+		t.Errorf("expected Port=3000 from explicit flag, got %d", cmd.Port)
+	}
+}
+
+func TestRun_EnvVar_FallsBackToDefault(t *testing.T) {
+	os.Unsetenv("TEST_CLI_PORT")
+
+	cmd := &envCmd{}
+	withArgs([]string{"app", "envcmd"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Port != 8080 {
+		t.Errorf("expected Port=8080 (default), got %d", cmd.Port)
+	}
+}
+
+func TestRun_EnvVar_StringOption(t *testing.T) {
+	os.Setenv("TEST_CLI_HOST", "0.0.0.0")
+	defer os.Unsetenv("TEST_CLI_HOST")
+
+	cmd := &envCmd{}
+	withArgs([]string{"app", "envcmd"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Host != "0.0.0.0" {
+		t.Errorf("expected Host=0.0.0.0 from env, got %q", cmd.Host)
+	}
+}
+
+func TestRun_EnvVar_ShownInHelp(t *testing.T) {
+	withArgs([]string{"app", "envcmd", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run(Beans(&envCmd{}))
+		})
+		if !strings.Contains(out, "TEST_CLI_PORT") {
+			t.Errorf("expected TEST_CLI_PORT in help output, got: %q", out)
+		}
+	})
+}
+
 func TestRun_CancelledContext_Propagated(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
