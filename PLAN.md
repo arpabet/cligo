@@ -19,7 +19,7 @@
 - [x] **2.4** Environment variable binding — `cli:"option=port,env=APP_PORT"` reads from env if flag not provided.
 - [ ] **2.5** Validation interface — `Validate() error` method on commands, called after parsing before `Run()`.
 - [ ] **2.6** Middleware/hooks — `BeforeRun(c glue.Container) error` and `AfterRun(c glue.Container) error` interfaces. Also a global middleware chain on `CliApplication`.
-- [ ] **2.7** Slice arguments — support `[]string`, `[]int` for options that can be repeated (`--tag=foo --tag=bar`).
+- [x] **2.7** Slice arguments — support `[]string`, `[]int` for options that can be repeated (`--tag=foo --tag=bar`).
 
 ## Phase 3: Polish & Ecosystem
 

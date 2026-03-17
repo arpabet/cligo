@@ -1717,3 +1717,151 @@ func TestConfigFlag_ShortFlag(t *testing.T) {
 		t.Errorf("expected Profile=short, got %q", cmd.Profile)
 	}
 }
+
+// ─── slice option tests ─────────────────────────────────────────────────────
+
+type sliceCmd struct {
+	Parent CliGroup  `cli:"group=cli"`
+	Tags   []string  `cli:"option=tag,short=t,help=Add a tag"`
+	Ports  []int     `cli:"option=port,help=Add a port"`
+	Ratios []float64 `cli:"option=ratio,help=Add a ratio"`
+	Flags  []bool    `cli:"option=flag,help=Add a flag"`
+	ran    bool
+}
+
+func (c *sliceCmd) Command() string                               { return "slicecmd" }
+func (c *sliceCmd) Help() (string, string)                        { return "Slice command.", "" }
+func (c *sliceCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+
+func TestSliceOption_StringArray_Repeated(t *testing.T) {
+	cmd := &sliceCmd{}
+	withArgs([]string{"app", "slicecmd", "--tag=foo", "--tag=bar", "--tag=baz"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if len(cmd.Tags) != 3 || cmd.Tags[0] != "foo" || cmd.Tags[1] != "bar" || cmd.Tags[2] != "baz" {
+		t.Errorf("expected Tags=[foo bar baz], got %v", cmd.Tags)
+	}
+}
+
+func TestSliceOption_StringArray_ShortFlag(t *testing.T) {
+	cmd := &sliceCmd{}
+	withArgs([]string{"app", "slicecmd", "-t", "alpha", "-t", "beta"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if len(cmd.Tags) != 2 || cmd.Tags[0] != "alpha" || cmd.Tags[1] != "beta" {
+		t.Errorf("expected Tags=[alpha beta], got %v", cmd.Tags)
+	}
+}
+
+func TestSliceOption_IntSlice(t *testing.T) {
+	cmd := &sliceCmd{}
+	withArgs([]string{"app", "slicecmd", "--port=8080", "--port=9090"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if len(cmd.Ports) != 2 || cmd.Ports[0] != 8080 || cmd.Ports[1] != 9090 {
+		t.Errorf("expected Ports=[8080 9090], got %v", cmd.Ports)
+	}
+}
+
+func TestSliceOption_Float64Slice(t *testing.T) {
+	cmd := &sliceCmd{}
+	withArgs([]string{"app", "slicecmd", "--ratio=1.5", "--ratio=2.7"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if len(cmd.Ratios) != 2 || cmd.Ratios[0] != 1.5 || cmd.Ratios[1] != 2.7 {
+		t.Errorf("expected Ratios=[1.5 2.7], got %v", cmd.Ratios)
+	}
+}
+
+func TestSliceOption_BoolSlice(t *testing.T) {
+	cmd := &sliceCmd{}
+	withArgs([]string{"app", "slicecmd", "--flag=true", "--flag=false", "--flag=true"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if len(cmd.Flags) != 3 || cmd.Flags[0] != true || cmd.Flags[1] != false || cmd.Flags[2] != true {
+		t.Errorf("expected Flags=[true false true], got %v", cmd.Flags)
+	}
+}
+
+func TestSliceOption_Empty_ReturnsNil(t *testing.T) {
+	cmd := &sliceCmd{}
+	withArgs([]string{"app", "slicecmd"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if cmd.Tags != nil {
+		t.Errorf("expected Tags=nil when not provided, got %v", cmd.Tags)
+	}
+}
+
+type sliceEnvCmd struct {
+	Parent CliGroup `cli:"group=cli"`
+	Tags   []string `cli:"option=tag,env=APP_TAGS,help=Add a tag"`
+	Ports  []int    `cli:"option=port,env=APP_PORTS,help=Add a port"`
+	ran    bool
+}
+
+func (c *sliceEnvCmd) Command() string                               { return "sliceenvcmd" }
+func (c *sliceEnvCmd) Help() (string, string)                        { return "Slice env command.", "" }
+func (c *sliceEnvCmd) Run(_ context.Context, _ glue.Container) error { c.ran = true; return nil }
+
+func TestSliceOption_EnvVar_StringArray(t *testing.T) {
+	t.Setenv("APP_TAGS", "x,y,z")
+	cmd := &sliceEnvCmd{}
+	withArgs([]string{"app", "sliceenvcmd"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if len(cmd.Tags) != 3 || cmd.Tags[0] != "x" || cmd.Tags[1] != "y" || cmd.Tags[2] != "z" {
+		t.Errorf("expected Tags=[x y z], got %v", cmd.Tags)
+	}
+}
+
+func TestSliceOption_EnvVar_IntSlice(t *testing.T) {
+	t.Setenv("APP_PORTS", "80,443,8080")
+	cmd := &sliceEnvCmd{}
+	withArgs([]string{"app", "sliceenvcmd"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if len(cmd.Ports) != 3 || cmd.Ports[0] != 80 || cmd.Ports[1] != 443 || cmd.Ports[2] != 8080 {
+		t.Errorf("expected Ports=[80 443 8080], got %v", cmd.Ports)
+	}
+}
+
+func TestSliceOption_CLIOverridesEnvVar(t *testing.T) {
+	t.Setenv("APP_TAGS", "from-env")
+	cmd := &sliceEnvCmd{}
+	withArgs([]string{"app", "sliceenvcmd", "--tag=from-cli"}, func() {
+		if err := Run(Beans(cmd)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if len(cmd.Tags) != 1 || cmd.Tags[0] != "from-cli" {
+		t.Errorf("expected Tags=[from-cli] (CLI overrides env), got %v", cmd.Tags)
+	}
+}
+
+func TestSliceOption_ShowsInHelp(t *testing.T) {
+	withArgs([]string{"app", "slicecmd", "--help"}, func() {
+		out := captureOutput(func() {
+			_ = Run(Beans(&sliceCmd{}))
+		})
+		if !strings.Contains(out, "--tag") {
+			t.Errorf("expected --tag in help output, got:\n%s", out)
+		}
+	})
+}

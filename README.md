@@ -181,6 +181,26 @@ Option value priority: explicit flag > environment variable > default value.
 
 Supported option types: `string`, `int` (all sizes), `float32`, `float64`, `bool`.
 
+### Slice Options
+
+Options with slice types (`[]string`, `[]int`, `[]float64`, `[]bool`) can be repeated to collect multiple values:
+
+```go
+type Build struct {
+    Parent cligo.CliGroup `cli:"group=cli"`
+    Tags   []string       `cli:"option=tag,short=-t,env=BUILD_TAGS,help=Add a tag"`
+    Ports  []int          `cli:"option=port,help=Expose ports"`
+}
+```
+
+```
+$ app build --tag=v1 --tag=latest --port=8080 --port=9090
+$ app build -t v1 -t latest
+$ BUILD_TAGS=v1,latest app build   # env var: comma-separated
+```
+
+For environment variables, slice values are comma-separated. CLI flags always take priority over environment variables.
+
 ## Struct Tag Reference
 
 All metadata is declared in the `cli` struct tag with comma-separated `key=value` pairs:
@@ -199,6 +219,9 @@ All metadata is declared in the `cli` struct tag with comma-separated `key=value
 | `alias=<name>` | Alternate name for a command or group | `cli:"group=ship,alias=mv"` |
 
 Tags can be combined: `cli:"option=speed,short=-s,default=10,env=SPEED,help=Speed in knots"`
+
+Supported types for arguments: `string`, `int` (all sizes), `float32`, `float64`.
+Supported types for options: `string`, `int` (all sizes), `float32`, `float64`, `bool`, `[]string`, `[]int`, `[]float64`, `[]bool`.
 
 ## Application Options
 

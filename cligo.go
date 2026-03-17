@@ -494,6 +494,33 @@ func (app *implCliApplication) executeCommand(ctx context.Context, c glue.Contai
 				} else {
 					flagSet.Bool(optName, defaultVal, helpText)
 				}
+			case reflect.Slice:
+				switch fieldVal.Type().Elem().Kind() {
+				case reflect.String:
+					if shortFlag != "" {
+						flagSet.StringArrayP(optName, shortFlag, nil, helpText)
+					} else {
+						flagSet.StringArray(optName, nil, helpText)
+					}
+				case reflect.Int:
+					if shortFlag != "" {
+						flagSet.IntSliceP(optName, shortFlag, nil, helpText)
+					} else {
+						flagSet.IntSlice(optName, nil, helpText)
+					}
+				case reflect.Float64:
+					if shortFlag != "" {
+						flagSet.Float64SliceP(optName, shortFlag, nil, helpText)
+					} else {
+						flagSet.Float64Slice(optName, nil, helpText)
+					}
+				case reflect.Bool:
+					if shortFlag != "" {
+						flagSet.BoolSliceP(optName, shortFlag, nil, helpText)
+					} else {
+						flagSet.BoolSlice(optName, nil, helpText)
+					}
+				}
 			}
 		}
 	}
@@ -558,20 +585,28 @@ func (app *implCliApplication) executeCommand(ctx context.Context, c glue.Contai
 
 	// Set option values: explicit flag > env var > default.
 	flagSet.VisitAll(func(f *pflag.Flag) {
-		if field, ok := options[f.Name]; ok {
-			value := f.Value.String()
+		field, ok := options[f.Name]
+		if !ok {
+			return
+		}
 
-			// If flag not explicitly set, try environment variable
-			if !flagSet.Changed(f.Name) {
-				if envVar, ok := envVars[f.Name]; ok {
-					if envValue := os.Getenv(envVar); envValue != "" {
-						value = envValue
-					}
+		if field.Kind() == reflect.Slice {
+			app.setSliceOption(flagSet, f, field, envVars)
+			return
+		}
+
+		value := f.Value.String()
+
+		// If flag not explicitly set, try environment variable
+		if !flagSet.Changed(f.Name) {
+			if envVar, ok := envVars[f.Name]; ok {
+				if envValue := os.Getenv(envVar); envValue != "" {
+					value = envValue
 				}
 			}
-
-			setFieldFromString(field, value)
 		}
+
+		setFieldFromString(field, value)
 	})
 
 	cmdBeans, ok := app.commandBeans[cmd.Command()]
@@ -771,6 +806,63 @@ func (app *implCliApplication) printCommandHelp(cmd CliCommand, stack []string) 
 
 			fmt.Printf("  %s  %s%s%s\n", app.styled("--"+optName, ansiYellow), help, defaultText, envText)
 		}
+	}
+}
+
+// setSliceOption sets a slice field from pflag or env var.
+// For env vars, values are comma-separated (e.g. APP_TAGS=foo,bar,baz).
+func (app *implCliApplication) setSliceOption(flagSet *pflag.FlagSet, f *pflag.Flag, field reflect.Value, envVars map[string]string) {
+	elemKind := field.Type().Elem().Kind()
+
+	// If flag not explicitly set, try environment variable
+	if !flagSet.Changed(f.Name) {
+		if envVar, ok := envVars[f.Name]; ok {
+			if envValue := os.Getenv(envVar); envValue != "" {
+				parts := strings.Split(envValue, ",")
+				switch elemKind {
+				case reflect.String:
+					field.Set(reflect.ValueOf(parts))
+				case reflect.Int:
+					vals := make([]int, 0, len(parts))
+					for _, p := range parts {
+						v, _ := strconv.Atoi(strings.TrimSpace(p))
+						vals = append(vals, v)
+					}
+					field.Set(reflect.ValueOf(vals))
+				case reflect.Float64:
+					vals := make([]float64, 0, len(parts))
+					for _, p := range parts {
+						v, _ := strconv.ParseFloat(strings.TrimSpace(p), 64)
+						vals = append(vals, v)
+					}
+					field.Set(reflect.ValueOf(vals))
+				case reflect.Bool:
+					vals := make([]bool, 0, len(parts))
+					for _, p := range parts {
+						v, _ := strconv.ParseBool(strings.TrimSpace(p))
+						vals = append(vals, v)
+					}
+					field.Set(reflect.ValueOf(vals))
+				}
+				return
+			}
+		}
+		return
+	}
+
+	switch elemKind {
+	case reflect.String:
+		vals, _ := flagSet.GetStringArray(f.Name)
+		field.Set(reflect.ValueOf(vals))
+	case reflect.Int:
+		vals, _ := flagSet.GetIntSlice(f.Name)
+		field.Set(reflect.ValueOf(vals))
+	case reflect.Float64:
+		vals, _ := flagSet.GetFloat64Slice(f.Name)
+		field.Set(reflect.ValueOf(vals))
+	case reflect.Bool:
+		vals, _ := flagSet.GetBoolSlice(f.Name)
+		field.Set(reflect.ValueOf(vals))
 	}
 }
 
