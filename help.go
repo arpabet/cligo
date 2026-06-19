@@ -33,6 +33,7 @@ func (t *implCliApplication) printHelp(groupName string, stack []string) {
 		}
 		Echo("  %s  Activate glue profiles (comma-separated).", t.styled("-p, --profile", ansiYellow))
 		Echo("  %s   Load config file (repeatable).", t.styled("-c, --config", ansiYellow))
+		Echo("  %s  Override a property (key=value, repeatable).", t.styled("-D, --property", ansiYellow))
 		Echo("  %s      Show extended logging information.", t.styled("--verbose", ansiYellow))
 		Echo("  %s   Show this message and exit.", t.styled("-h, --help", ansiYellow))
 		Echo("")

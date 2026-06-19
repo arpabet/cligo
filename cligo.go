@@ -72,6 +72,12 @@ func Run(options ...Option) (err error) {
 
 	beans = append(beans, app.getBeans()...)
 
+	// Register command-line -D/--property overrides as a top-priority property
+	// resolver so they win over env vars, config files and in-code defaults.
+	if cliProps := app.getCliProperties(); len(cliProps) > 0 {
+		beans = append(beans, &cliPropertyResolver{props: cliProps})
+	}
+
 	// Use user-provided context or create a signal-aware one
 	ctx := app.getContext()
 	if ctx == nil {

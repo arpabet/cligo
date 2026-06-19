@@ -11,26 +11,27 @@ import (
 
 // implCliApplication is the main application structure
 type implCliApplication struct {
-	name         string
-	title        string
-	help         string
-	version      string
-	build        string
-	verbose      bool
-	color        *bool
-	configFiles  []string
-	profiles     []string
-	ctx          context.Context
-	beans        []interface{}
-	properties   glue.Properties
-	groups       map[string][]CliGroup
-	commands     map[string][]CliCommand
-	commandBeans map[string][]interface{}
-	helps        map[string]string
-	hidden       map[interface{}]bool
-	aliasOf      map[interface{}]string
-	cmdAliases   map[string]map[string]CliCommand
-	groupAliases map[string]map[string]CliGroup
+	name          string
+	title         string
+	help          string
+	version       string
+	build         string
+	verbose       bool
+	color         *bool
+	configFiles   []string
+	profiles      []string
+	cliProperties map[string]string
+	ctx           context.Context
+	beans         []interface{}
+	properties    glue.Properties
+	groups        map[string][]CliGroup
+	commands      map[string][]CliCommand
+	commandBeans  map[string][]interface{}
+	helps         map[string]string
+	hidden        map[interface{}]bool
+	aliasOf       map[interface{}]string
+	cmdAliases    map[string]map[string]CliCommand
+	groupAliases  map[string]map[string]CliGroup
 }
 
 // New creates a new CLI application
@@ -83,6 +84,11 @@ func New(options ...Option) CliApplication {
 		app.configFiles = append(app.configFiles, cliConfigs...)
 	}
 
+	// Collect CLI -D/--property key=value overrides (highest-priority properties)
+	if cliProps := parseGlobalProperties(os.Args[1:]); len(cliProps) > 0 {
+		app.cliProperties = cliProps
+	}
+
 	return app
 }
 
@@ -128,4 +134,8 @@ func (t *implCliApplication) getConfigFiles() []string {
 
 func (t *implCliApplication) getProfiles() []string {
 	return t.profiles
+}
+
+func (t *implCliApplication) getCliProperties() map[string]string {
+	return t.cliProperties
 }

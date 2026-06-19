@@ -34,6 +34,50 @@ func parseGlobalFlag(args []string, flag string, short string) []string {
 	return values
 }
 
+// parseGlobalProperties extracts -D/--property key=value overrides from args.
+// Accepted forms (all repeatable): -Dkey=value, -D key=value, --property key=value
+// and --property=key=value. The key is split from the value on the first '='; later
+// occurrences of a key win.
+func parseGlobalProperties(args []string) map[string]string {
+	props := make(map[string]string)
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		var kv string
+		switch {
+		case arg == "-D" || arg == "--property":
+			if i+1 < len(args) {
+				i++
+				kv = args[i]
+			}
+		case strings.HasPrefix(arg, "-D"):
+			kv = arg[len("-D"):]
+		case strings.HasPrefix(arg, "--property="):
+			kv = arg[len("--property="):]
+		default:
+			continue
+		}
+		if key, value, ok := strings.Cut(kv, "="); ok && key != "" {
+			props[key] = value
+		}
+	}
+	return props
+}
+
+// globalPropertyArgSkip reports whether args[0] begins a -D/--property override and
+// how many tokens it consumes: 1 when the value is attached (-Dkey=v, --property=k=v)
+// and 2 when it follows as a separate token (-D k=v, --property k=v). It lets the
+// command parser step over global property flags wherever they appear.
+func globalPropertyArgSkip(args []string) (matched bool, skip int) {
+	switch arg := args[0]; {
+	case arg == "-D" || arg == "--property":
+		return true, 2
+	case strings.HasPrefix(arg, "-D") || strings.HasPrefix(arg, "--property="):
+		return true, 1
+	default:
+		return false, 0
+	}
+}
+
 // parseCliTag parses a cli tag string into a map of key-value pairs
 func parseCliTag(tag string) map[string]string {
 	result := make(map[string]string)

@@ -65,6 +65,9 @@ type CliApplication interface {
 	// Non-public method to keep optional profiles private
 	getProfiles() []string
 
+	// Non-public method exposing -D/--property command-line overrides
+	getCliProperties() map[string]string
+
 	// RegisterGroup register the cli group in the context
 	RegisterGroup(group CliGroup) error
 

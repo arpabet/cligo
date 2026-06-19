@@ -308,6 +308,7 @@ These flags are handled automatically:
 | `--version`, `-v` | Show version and build info (requires `Version()` option) |
 | `--profile`, `-p` | Activate glue profiles (comma-separated, repeatable) |
 | `--config`, `-c` | Load config file (repeatable, merged with `ConfigFile()` option) |
+| `--property`, `-D` | Override any property as `key=value` (repeatable, highest priority) |
 | `--verbose` | Enable verbose logging via glue |
 
 ## Context & Signal Handling
@@ -483,6 +484,28 @@ app:
 ```
 
 Config values are merged into `glue.Properties` before the DI container is created, so they're available via `value:"key"` struct tags. Priority: flags > env vars > config file > defaults.
+
+### Property Overrides (`-D` / `--property`)
+
+The `--property` flag (short form `-D`, JVM-style) overrides any property directly on the command line, without a config file. It sits at the **top** of the resolution order — above env vars, config files, and in-code defaults — so it is the simplest way to tweak one value for a single run.
+
+```bash
+# override a single property
+myapp -D http-server.bind-address=127.0.0.1:9123 serve
+
+# repeatable; both -D and --property, attached or separated
+myapp -Dlog.level=debug --property http-server.bind-address=0.0.0.0:9000 serve
+```
+
+Accepted forms (all repeatable): `-Dkey=value`, `-D key=value`, `--property key=value`, `--property=key=value`. The key is split from the value on the first `=`, so values may themselves contain `=`. Overrides apply to the same `glue.Properties` everything else reads, so they flow through `value:"key"` injection and any `Properties.GetString(...)` lookup. No code is required — the resolver is registered automatically whenever `-D`/`--property` is present.
+
+```go
+type Serve struct {
+    BindAddr string `value:"http-server.bind-address"` // -D http-server.bind-address=… wins
+}
+```
+
+Full precedence (highest first): **`-D`/`--property` → env vars → `.env` → config file → in-code defaults**.
 
 ## Error Handling
 

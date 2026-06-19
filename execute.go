@@ -106,6 +106,16 @@ func (t *implCliApplication) parseAndExecute(ctx context.Context, c glue.Contain
 		return t.parseAndExecute(ctx, c, currentGroup, args[skip:], stack)
 	}
 
+	// Skip -D/--property overrides (parsed up front into a property resolver),
+	// then continue locating the command.
+	if matched, skip := globalPropertyArgSkip(args); matched {
+		if skip >= len(args) {
+			t.printHelp(currentGroup, stack)
+			return nil
+		}
+		return t.parseAndExecute(ctx, c, currentGroup, args[skip:], stack)
+	}
+
 	t.printHelp(currentGroup, stack)
 	if suggestion := t.suggest(currentGroup, args[0]); suggestion != "" {
 		return fmt.Errorf("unknown command or group: %s. Did you mean %q?", args[0], suggestion)

@@ -33,6 +33,18 @@ Property injection via `glue.Properties`. Demonstrates injecting configuration v
 
 ```
 go run ./examples/props users add alice
+# Add user 'alice' in 'dev' env
 go run ./examples/props users remove bob
 go run ./examples/props --help
+```
+
+Override the injected `profiles.active` property straight from the command line with
+the global `-D` / `--property` flag (it outranks the in-code default). Global flags
+go **before** the command:
+
+```
+go run ./examples/props -D profiles.active=prod users add alice
+# Add user 'alice' in 'prod' env
+go run ./examples/props --property profiles.active=staging users add alice
+# Add user 'alice' in 'staging' env
 ```
