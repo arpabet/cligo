@@ -7,11 +7,11 @@ package cligo
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strings"
 
 	"go.arpabet.com/glue"
+	"golang.org/x/xerrors"
 )
 
 // Execute parses arguments and runs the appropriate command
@@ -118,7 +118,7 @@ func (t *implCliApplication) parseAndExecute(ctx context.Context, c glue.Contain
 
 	t.printHelp(currentGroup, stack)
 	if suggestion := t.suggest(currentGroup, args[0]); suggestion != "" {
-		return fmt.Errorf("unknown command or group: %s. Did you mean %q?", args[0], suggestion)
+		return xerrors.Errorf("unknown command or group: %s. Did you mean %q?", args[0], suggestion)
 	}
-	return fmt.Errorf("unknown command or group: %s", args[0])
+	return xerrors.Errorf("unknown command or group: %s", args[0])
 }

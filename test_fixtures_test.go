@@ -8,11 +8,12 @@ package cligo
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/xerrors"
 )
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -116,7 +117,7 @@ type failCmd struct {
 func (c *failCmd) Command() string        { return "fail" }
 func (c *failCmd) Help() (string, string) { return "Always fails.", "" }
 func (c *failCmd) Run(_ context.Context) error {
-	return fmt.Errorf("intentional failure")
+	return xerrors.New("intentional failure")
 }
 
 // panicErrCmd panics with an error value.
@@ -127,7 +128,7 @@ type panicErrCmd struct {
 func (c *panicErrCmd) Command() string        { return "panicerr" }
 func (c *panicErrCmd) Help() (string, string) { return "Panics with error.", "" }
 func (c *panicErrCmd) Run(_ context.Context) error {
-	panic(fmt.Errorf("panic error"))
+	panic(xerrors.New("panic error"))
 }
 
 // panicStrCmd panics with a plain string.

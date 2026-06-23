@@ -5,13 +5,13 @@
 
 package cligo
 
-import "fmt"
+import "golang.org/x/xerrors"
 
 // RegisterCommand registers a command
 func (t *implCliApplication) RegisterCommand(cmd CliCommand) error {
 	info := extractParentInfo(cmd)
 	if info.group == "" {
-		return fmt.Errorf("parent group not found in cli command: %v", cmd)
+		return xerrors.Errorf("parent group not found in cli command: %v", cmd)
 	}
 	t.commands[info.group] = append(t.commands[info.group], cmd)
 	if info.hidden {
@@ -31,7 +31,7 @@ func (t *implCliApplication) RegisterCommand(cmd CliCommand) error {
 func (t *implCliApplication) RegisterCommandWithBeans(cmd CliCommandWithBeans) error {
 	info := extractParentInfo(cmd)
 	if info.group == "" {
-		return fmt.Errorf("parent group not found in cli command: %v", cmd)
+		return xerrors.Errorf("parent group not found in cli command: %v", cmd)
 	}
 	t.commands[info.group] = append(t.commands[info.group], cmd)
 	if info.hidden {

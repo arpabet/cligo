@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	"go.arpabet.com/glue"
+	"golang.org/x/xerrors"
 )
 
 var RootGroup = "cli"
@@ -49,9 +50,9 @@ func Run(options ...Option) (err error) {
 			case error:
 				err = v
 			case string:
-				err = fmt.Errorf("%s", v)
+				err = xerrors.Errorf("%s", v)
 			default:
-				err = fmt.Errorf("recover: %v", v)
+				err = xerrors.Errorf("recover: %v", v)
 			}
 		}
 	}()
@@ -104,7 +105,7 @@ func Run(options ...Option) (err error) {
 
 	c, err := glue.NewWithOptions(glueOpts...)
 	if err != nil {
-		return fmt.Errorf("glue.New: %w", err)
+		return xerrors.Errorf("glue.New: %w", err)
 	}
 	defer c.Close()
 

@@ -4,7 +4,8 @@ go 1.18
 
 require (
 	github.com/spf13/pflag v1.0.10
-	go.arpabet.com/glue v1.5.0
+	go.arpabet.com/glue v1.5.1
+	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
 )
 
 require (

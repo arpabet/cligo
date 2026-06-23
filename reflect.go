@@ -6,13 +6,13 @@
 package cligo
 
 import (
-	"fmt"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/pflag"
+	"golang.org/x/xerrors"
 )
 
 type argInfo struct {
@@ -159,7 +159,7 @@ func (t *implCliApplication) setArgumentValues(argDefs []argInfo, cmdValue refle
 		if argIndex >= len(argValues) {
 			if arg.required {
 				Echo("%s\n%s\n", t.getCommandUsage(cmd, stack), t.getCommandTryUsage(cmd, stack))
-				return fmt.Errorf("missing required argument '%s'", arg.name)
+				return xerrors.Errorf("missing required argument '%s'", arg.name)
 			}
 			if arg.defVal != "" {
 				setFieldFromString(field, arg.defVal)
@@ -174,14 +174,14 @@ func (t *implCliApplication) setArgumentValues(argDefs []argInfo, cmdValue refle
 			val, err := strconv.ParseInt(argValues[argIndex], 10, 64)
 			if err != nil {
 				Echo("%s\n%s\n", t.getCommandUsage(cmd, stack), t.getCommandTryUsage(cmd, stack))
-				return fmt.Errorf("invalid integer for argument %s: %s", arg.name, argValues[argIndex])
+				return xerrors.Errorf("invalid integer for argument %s: %s", arg.name, argValues[argIndex])
 			}
 			field.SetInt(val)
 		case reflect.Float32, reflect.Float64:
 			val, err := strconv.ParseFloat(argValues[argIndex], 64)
 			if err != nil {
 				Echo("%s\n%s\n", t.getCommandUsage(cmd, stack), t.getCommandTryUsage(cmd, stack))
-				return fmt.Errorf("invalid float for argument %s: %s", arg.name, argValues[argIndex])
+				return xerrors.Errorf("invalid float for argument %s: %s", arg.name, argValues[argIndex])
 			}
 			field.SetFloat(val)
 		}

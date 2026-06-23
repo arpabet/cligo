@@ -5,13 +5,13 @@
 
 package cligo
 
-import "fmt"
+import "golang.org/x/xerrors"
 
 // RegisterGroup registers a command group
 func (t *implCliApplication) RegisterGroup(group CliGroup) error {
 	info := extractParentInfo(group)
 	if info.group == "" {
-		return fmt.Errorf("parent group not found in cli group: %v", group)
+		return xerrors.Errorf("parent group not found in cli group: %v", group)
 	}
 	t.groups[info.group] = append(t.groups[info.group], group)
 	if info.hidden {

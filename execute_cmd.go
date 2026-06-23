@@ -7,11 +7,11 @@ package cligo
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 
 	"github.com/spf13/pflag"
 	"go.arpabet.com/glue"
+	"golang.org/x/xerrors"
 )
 
 // executeCommand parses arguments and options for a command and executes it
@@ -63,7 +63,7 @@ func (t *implCliApplication) executeCommand(ctx context.Context, c glue.Containe
 		child, err := c.Extend(cmdBeans...)
 		if err != nil {
 			Echo("%s\n%s\n", t.getCommandUsage(cmd, stack), t.getCommandTryUsage(cmd, stack))
-			return fmt.Errorf("fail to initialize '%s' command scope context, %v", cmd.Command(), err)
+			return xerrors.Errorf("fail to initialize '%s' command scope context, %v", cmd.Command(), err)
 		}
 		defer child.Close()
 		return cmd.Run(ctx)

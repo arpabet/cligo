@@ -6,12 +6,12 @@
 package cligo
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"go.arpabet.com/glue"
+	"golang.org/x/xerrors"
 )
 
 // resolveConfigFiles finds the first existing file from the given paths
@@ -29,7 +29,7 @@ func resolveConfigFiles(paths []string) ([]interface{}, error) {
 		case ".properties", ".yaml", ".yml", ".json", ".toml":
 			return []interface{}{&glue.PropertySource{File: "file:" + path}}, nil
 		default:
-			return nil, fmt.Errorf("unsupported config file format: %s", ext)
+			return nil, xerrors.Errorf("unsupported config file format: %s", ext)
 		}
 	}
 	return nil, nil // no file found, not an error
